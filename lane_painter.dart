@@ -26,7 +26,7 @@ class LanePainter extends CustomPainter {
     // Draw wood planks
     for (int b = 0; b < BOARDS; b++) {
       final paint = Paint()
-        ..color = b % 5 == 0 ? const Color(0xFFC8A85A) : const Color(0xFFD4B46A);
+        ..color = (b+1) % 5 == 0 ? const Color(0xFFC8A85A) : const Color(0xFFD4B46A);
       canvas.drawRect(Rect.fromLTWH(b * bw, 0, bw, size.height), paint);
       canvas.drawRect(
         Rect.fromLTWH(b * bw, 0, bw, size.height),
