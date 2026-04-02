@@ -1,4 +1,4 @@
-//original version no buff
+//original version no buff rename to physics.dart to use. 
 import 'dart:math';
 
 // ═══════════════════════════════════════════════════════════
