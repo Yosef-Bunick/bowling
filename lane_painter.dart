@@ -10,7 +10,7 @@ class LanePainter extends CustomPainter {
   LanePainter({required this.path, required this.oilMatrix, required this.animIdx});
 
   static const int BOARDS = 39;
-  static const int LANE_FT = 60;
+  static const int LANE_FT = 65;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -36,8 +36,10 @@ class LanePainter extends CustomPainter {
 
     // Oil overlay
     if (oilMatrix.isNotEmpty) {
-      for (int f = 0; f < LANE_FT; f++) {
+      final oilFt = oilMatrix.first.length;
+      for (int f = 0; f < oilFt; f++) {
         for (int b = 0; b < BOARDS && b < oilMatrix.length; b++) {
+          if (f >= oilMatrix[b].length) continue;
           final v = oilMatrix[b][f];
           if (v > 0.02) {
             canvas.drawRect(
@@ -51,7 +53,7 @@ class LanePainter extends CustomPainter {
 
     // Distance markers
     final textPaint = Paint()..color = Colors.black.withOpacity(0.28);
-    for (int f = 10; f < 60; f += 10) {
+    for (int f = 10; f <= 60; f += 10) {
       canvas.drawLine(
         Offset(0, (LANE_FT - f) * fh),
         Offset(size.width, (LANE_FT - f) * fh),
@@ -64,6 +66,8 @@ class LanePainter extends CustomPainter {
     for (int b = 4; b < BOARDS; b += 5) {
       _drawText(canvas, '${b + 1}', Offset(b * bw + 1, size.height - 12), 8, Colors.black.withOpacity(0.25));
     }
+
+    _drawPins(canvas, size);
 
     if (path.isEmpty) return;
 
@@ -128,6 +132,52 @@ class LanePainter extends CustomPainter {
         canvas.drawCircle(Offset(hx, hy), br * (offset < 2 ? 0.17 : 0.11),
           Paint()..color = Colors.black.withOpacity(0.55));
       }
+    }
+  }
+
+
+  void _drawPins(Canvas canvas, Size size) {
+    const laneWidthInches = 41.5;
+    const headPinFt = 60.0;
+    const pinWidthInches = 4.75;
+    const pinHeightInches = 3.5;
+
+    // Pin-center coordinates in inches relative to the head pin.
+    const pins = [
+      [0.00, 0.00],
+      [-6.00, 10.375], [6.00, 10.375],
+      [-12.00, 20.75], [0.00, 20.75], [12.00, 20.75],
+      [-18.00, 31.125], [-6.00, 31.125], [6.00, 31.125], [18.00, 31.125],
+    ];
+
+    final pxPerInchX = size.width / laneWidthInches;
+    final pxPerInchY = size.height / (LANE_FT * 12.0);
+    final centerX = size.width / 2.0;
+
+    final fill = Paint()..color = Colors.black.withOpacity(0.92);
+    final outline = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+
+    final pinW = pinWidthInches * pxPerInchX;
+    final pinH = pinHeightInches * pxPerInchY;
+
+    for (final p in pins) {
+      final dxIn = (p[0] as num).toDouble();
+      final dyIn = (p[1] as num).toDouble();
+
+      final x = centerX + dxIn * pxPerInchX;
+      final y = (LANE_FT - (headPinFt + dyIn / 12.0)) * (size.height / LANE_FT);
+
+      final rect = Rect.fromCenter(
+        center: Offset(x, y),
+        width: pinW,
+        height: pinH,
+      );
+
+      canvas.drawOval(rect, fill);
+      canvas.drawOval(rect, outline);
     }
   }
 
