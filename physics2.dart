@@ -1,5 +1,4 @@
 //rename to physics.dart this model is the new updated with buff 
-
 import 'dart:math';
 
 // ═══════════════════════════════════════════════════════════
@@ -167,70 +166,150 @@ class SimResult {
     required this.pinSpeed,required this.pinRPM,required this.pinBoard,required this.pinAR});
 }
 
-List<List<double>> buildOilMatrix(List<LoadRow> fwdRows, List<LoadRow> revRows, {
-  double alpha = 0.25,  // initial drop fraction after pump stops
-  double r = 0.91,      // retention per foot
+List<List<double>> buildOilMatrix(
+  List<LoadRow> fwdRows,
+  List<LoadRow> revRows, {
+  double alphaF = 0.25,
+  double rF = 0.91,
+  double alphaR = 0.32,
+  double rR = 0.94,
+  // Brush saturation carryover parameters
+  double k = 0.85,       // reverse inherits this fraction of forward end saturation
+  double beta = 0.35,    // carryover fraction from previous row
+  double gamma = 0.12,   // bleed coefficient during active load
+  double eta = 0.45,     // fraction of old saturation retained
+  double lambda = 0.75,  // how much active row loads the brush
 }) {
   final raw = List.generate(BOARDS, (_) => List<double>.filled(LANE_FT, 0.0));
-  
-  void applyRows(List<LoadRow> rows) {
+
+  // Forward pass: tail goes DOWNLANE (toward pins)
+  // Returns final brush saturation for reverse inheritance
+  double applyForwardRows(List<LoadRow> rows) {
+    double prevSaturation = 0.0;  // brush starts dry
+
     for (final row in rows) {
       if (row.toil == 0 || row.loads == 0) continue;
-      
-      // Board range (convert from edge-in to 0-indexed)
+
       final bStart = (row.sl + 1 - 1).clamp(0, BOARDS - 1);
       final bEnd = (39 - row.sr - 1).clamp(0, BOARDS - 1);
       if (bStart > bEnd) continue;
-      
-      // Distance range
+
       final x0 = min(row.d0, row.d1);
       final x1 = max(row.d0, row.d1);
-      final buffFt = row.buff / 12.0;  // convert inches to feet
-      
-      // Base oil amount per board-foot
+      final buffFt = row.buff / 12.0;
+
       final numBoards = bEnd - bStart + 1;
       final loadZoneLen = x1 - x0;
       if (numBoards <= 0 || loadZoneLen <= 0) continue;
+
+      // Brush saturation at start of this row
+      final saturation = beta * prevSaturation;
+
+      // Base oil per board-foot
       final baseAmount = row.toil / (numBoards * loadZoneLen);
-      
+
+      // Saturation at end of row (becomes reservoir for buff)
+      final endSaturation = eta * saturation + lambda * baseAmount;
+
       for (int b = bStart; b <= bEnd; b++) {
         for (int f = 0; f < LANE_FT; f++) {
           final x = f.toDouble();
           double contribution = 0.0;
-          
+
           if (x < x0) {
-            // Before load zone
             contribution = 0.0;
           } else if (x <= x1) {
-            // In load zone — full oil
-            contribution = baseAmount;
+            // Active load + bleed from brush memory
+            contribution = baseAmount + gamma * saturation;
           } else {
-            // After load zone — exponential tail through buff distance
+            // Forward tail: decay toward pins using end saturation
             final d = x - x1;
             if (d <= buffFt) {
-              contribution = baseAmount * alpha * pow(r, d);
+              contribution = endSaturation * alphaF * pow(rF, d);
             }
-            // else: past buff zone, contribution stays 0
           }
-          
+
           raw[b][f] += contribution;
         }
       }
+
+      // Carry saturation to next row
+      prevSaturation = endSaturation;
+    }
+
+    return prevSaturation;  // return final saturation for reverse
+  }
+
+  // Reverse pass: tail goes TOWARD FOUL LINE (toward heads)
+  void applyReverseRows(List<LoadRow> rows, double forwardEndSaturation) {
+    // Inherit saturation from forward pass
+    double prevSaturation = k * forwardEndSaturation;
+
+    for (final row in rows) {
+      if (row.toil == 0 || row.loads == 0) continue;
+
+      final bStart = (row.sl + 1 - 1).clamp(0, BOARDS - 1);
+      final bEnd = (39 - row.sr - 1).clamp(0, BOARDS - 1);
+      if (bStart > bEnd) continue;
+
+      final xDrop = max(row.d0, row.d1);
+      final xStop = min(row.d0, row.d1);
+      final buffFt = row.buff / 12.0;
+
+      final numBoards = bEnd - bStart + 1;
+      final loadZoneLen = xDrop - xStop;
+      if (numBoards <= 0 || loadZoneLen <= 0) continue;
+
+      // Brush saturation at start of this row
+      final saturation = beta * prevSaturation;
+
+      final baseAmount = row.toil / (numBoards * loadZoneLen);
+
+      // Saturation at end of row
+      final endSaturation = eta * saturation + lambda * baseAmount;
+
+      for (int b = bStart; b <= bEnd; b++) {
+        for (int f = 0; f < LANE_FT; f++) {
+          final x = f.toDouble();
+          double contribution = 0.0;
+
+          if (x > xDrop) {
+            contribution = 0.0;
+          } else if (x >= xStop) {
+            // Active load + bleed from brush memory
+            contribution = baseAmount + gamma * saturation;
+          } else {
+            // Reverse tail: decay toward foul line using end saturation
+            final d = xStop - x;
+            if (d <= buffFt && d >= 0) {
+              contribution = endSaturation * alphaR * pow(rR, d);
+            }
+          }
+
+          raw[b][f] += contribution;
+        }
+      }
+
+      // Carry saturation to next row
+      prevSaturation = endSaturation;
     }
   }
-  
-  applyRows(fwdRows);
-  applyRows(revRows);
-  
-  // Normalize to 0..1
-  double maxV = 0;
+
+  final forwardEndSat = applyForwardRows(fwdRows);
+  applyReverseRows(revRows, forwardEndSat);
+
+  double maxV = 0.0;
   for (int b = 0; b < BOARDS; b++) {
     for (int f = 0; f < LANE_FT; f++) {
       if (raw[b][f] > maxV) maxV = raw[b][f];
     }
   }
+
   if (maxV == 0) return raw;
-  return List.generate(BOARDS, (b) => List.generate(LANE_FT, (f) => (raw[b][f] / maxV).clamp(0.0, 1.0)));
+  return List.generate(
+    BOARDS,
+    (b) => List.generate(LANE_FT, (f) => (raw[b][f] / maxV).clamp(0.0, 1.0)),
+  );
 }
 
 double oilAt2D(List<List<double>> oil, double board, double ft) {
@@ -330,7 +409,7 @@ SimResult runSimulation(BowlerInputs inp, PatternData pat, BallSpecs ball, List<
   double prevOil = oilAt2D(oilMatrix, board, ft);
   bool inGutter = false;
 
-  while (ft < 60.0 && vx > 0.3) {
+  while (ft < LANE_FT.toDouble() && vx > 0.3) {
     final double oilLocal = oilAt2D(oilMatrix, board, ft);
     final double dt = STEP_M / vx.clamp(0.3, 30.0);
     final double Fn = massKg * G_MS2;
