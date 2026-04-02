@@ -280,11 +280,11 @@ class _BowlerTabState extends State<_BowlerTab> {
       _Slider('Landing Distance', 'Feet downlane where the ball first touches',
         b.landingDistanceFt, 0.5, 15.0, 0.25, (v) { setState(() => b.landingDistanceFt = v); _emit(); }, unit: ' ft'),
       _Slider('Launch Angle', 'Initial direction after touchdown',
-        b.angleDeg, -10, 10, 0.5, (v) { setState(() => b.angleDeg = v); _emit(); }, unit: '°'),
+        b.angleDeg, -20, 20, 1, (v) { setState(() => b.angleDeg = v); _emit(); }, unit: '°'),
 
       const _Section('Delivery'),
       _Slider('Ball Speed', 'mph at release',
-        b.speedMph, 10, 24, 0.5, (v) { setState(() => b.speedMph = v); _emit(); }, unit: ' mph'),
+        b.speedMph, 10, 36, 1, (v) { setState(() => b.speedMph = v); _emit(); }, unit: ' mph'),
       _Slider('Rev Rate', 'RPM at release',
         b.revRPM, 50, 500, 10, (v) { setState(() => b.revRPM = v); _emit(); }, unit: ' rpm'),
 
