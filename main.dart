@@ -1,885 +1,656 @@
-import 'dart:async';
-import 'dart:math';
-import 'package:flutter/material.dart';
-import 'models/physics.dart';
-import 'painters/lane_painter.dart';
 
-void main() => runApp(const BowlingSimApp());
 
-class BowlingSimApp extends StatelessWidget {
-  const BowlingSimApp({super.key});
-  @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Bowling Simulator',
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData.dark().copyWith(
-      useMaterial3: true,
-      scaffoldBackgroundColor: const Color(0xFF0A0A12),
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF6366F1),
-        brightness: Brightness.dark,
-        surface: const Color(0xFF1A1B26),
-        surfaceContainer: const Color(0xFF242736),
-      ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Color(0xFF0A0A12),
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-      ),
-      cardTheme: CardThemeData(
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        color: const Color(0xFF1A1B26),
-        surfaceTintColor: Colors.transparent,
-      ),
-      sliderTheme: SliderThemeData(
-        activeTrackColor: const Color(0xFF6366F1),
-        inactiveTrackColor: const Color(0xFF2A2D3A),
-        thumbColor: const Color(0xFF6366F1),
-        overlayColor: const Color(0xFF6366F1).withOpacity(0.2),
-        trackHeight: 4,
-        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: const Color(0xFF242736),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      ),
-    ),
-    home: const MainScreen(),
-  );
+
+
+"""
+AI Makeup Engine v5.0 - Main Application
+=========================================
+Bridge between GUI and Engine
+- Camera capture + pose validation
+- 3-view capture workflow
+- Generates face analysis + step-by-step instructions
+- Renders per-step makeup overlay previews
+
+This version keeps the 1.15 engine calls, but uses a new 4-panel GUI layout
+matching the 4.3 workflow.
+"""
+
+import json
+import threading
+import time
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+
+import cv2
+import numpy as np
+import tkinter as tk
+
+from engine import (
+    MakeupEngine,
+    generate_instructions,
+)
+from gui import MakeupGUI, SUCCESS_COLOR, WARNING_COLOR, TEXT_COLOR
+
+
+# =============================================================================
+# CAPTURE STATE
+# =============================================================================
+
+
+@dataclass
+class CaptureState:
+    """Track 3-view capture progress"""
+
+    views: List[str] = field(default_factory=lambda: ["LEFT", "CENTER", "RIGHT"])
+    captured: List[bool] = field(default_factory=lambda: [False, False, False])
+    current_index: int = 0
+
+    @property
+    def current_view(self) -> str:
+        if self.current_index < len(self.views):
+            return self.views[self.current_index]
+        return "DONE"
+
+    @property
+    def all_captured(self) -> bool:
+        return all(self.captured)
+
+    def mark_captured(self):
+        if self.current_index < len(self.captured):
+            self.captured[self.current_index] = True
+            self.current_index += 1
+
+    def reset(self):
+        self.captured = [False, False, False]
+        self.current_index = 0
+
+
+# =============================================================================
+# POSE VALIDATION
+# =============================================================================
+
+
+@dataclass
+class PoseConfig:
+    yaw_left: float = 25.0
+    yaw_right: float = -25.0
+    yaw_center_tol: float = 10.0
+    pitch_tol: float = 20.0
+    yaw_hard_limit: float = 60.0
+    pitch_hard_limit: float = 40.0
+
+
+def check_pose(view: str, yaw: float, pitch: float, cfg: PoseConfig) -> Tuple[bool, str]:
+    """Check if current pose matches required view"""
+    if abs(yaw) > cfg.yaw_hard_limit:
+        return False, f"Turn less ({abs(yaw):.0f}° > {cfg.yaw_hard_limit:.0f}°)"
+    if abs(pitch) > cfg.pitch_hard_limit:
+        return False, f"Level head ({abs(pitch):.0f}° > {cfg.pitch_hard_limit:.0f}°)"
+
+    if abs(pitch) > cfg.pitch_tol:
+        return False, f"Level head (pitch: {pitch:+.0f}°)"
+
+    if view == "LEFT":
+        if yaw >= cfg.yaw_left:
+            return True, "✓ LEFT view OK"
+        return False, f"Turn RIGHT more ({yaw:+.0f}° < {cfg.yaw_left:+.0f}°)"
+
+    if view == "RIGHT":
+        if yaw <= cfg.yaw_right:
+            return True, "✓ RIGHT view OK"
+        return False, f"Turn LEFT more ({yaw:+.0f}° > {cfg.yaw_right:+.0f}°)"
+
+    if view == "CENTER":
+        if abs(yaw) <= cfg.yaw_center_tol:
+            return True, "✓ CENTER view OK"
+        return False, f"Face forward ({yaw:+.0f}°)"
+
+    return False, "Unknown view"
+
+
+# =============================================================================
+# APPLICATION CONTROLLER
+# =============================================================================
+
+
+STEP_NAMES = [
+    "All",
+    "Concealer",
+    "Contour",
+    "Blush",
+    "Highlight",
+    "Bronzer",
+    "Brows",
+    "Eyeshadow",
+    "Eyeliner",
+    "Lips",
+]
+
+STEP_TO_PRODUCTS: Dict[str, List[str]] = {
+    "Concealer": ["concealer"],
+    "Contour": ["contour"],
+    "Blush": ["blush"],
+    "Highlight": ["highlight"],
+    "Bronzer": ["bronzer"],
+    "Brows": ["brow"],
+    "Eyeshadow": ["eyeshadow"],
+    "Eyeliner": ["eyeliner"],
+    "Lips": ["lip", "lip_gloss"],
 }
 
-// ─── Main Screen ────────────────────────────────────────────
-class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
-  @override State<MainScreen> createState() => _MainScreenState();
-}
 
-class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
-  late TabController _tabs;
-  BowlerInputs bowler  = BowlerInputs();
-  BallSpecs    ball    = BallSpecs();
-  PatternData  pattern = PatternData.masters2026();
-  SimResult?   simResult;
-  List<List<double>> oilMatrix = [];
-  int animIdx = 0;
-  bool playing = false;
-  Timer? animTimer;
-  Timer? _debounce;
+class MakeupApp:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.gui = MakeupGUI(self.root)
+        self.engine = MakeupEngine()
 
-  @override
-  void initState() {
-    super.initState();
-    _tabs = TabController(length: 5, vsync: this);
-    _rebuild();
-  }
+        self.capture_state = CaptureState()
+        self.pose_config = PoseConfig()
 
-  @override
-  void dispose() {
-    _debounce?.cancel(); animTimer?.cancel(); _tabs.dispose(); super.dispose();
-  }
+        # Camera
+        self.cap: Optional[cv2.VideoCapture] = None
+        self.camera_running = False
+        self.camera_thread: Optional[threading.Thread] = None
 
-  void _rebuild() {
-    setState(() {
-      oilMatrix  = buildOilMatrix(pattern.fwdRows, pattern.revRows);
-      simResult  = runSimulation(bowler, pattern, ball, oilMatrix);
-      animIdx = 0; playing = false; animTimer?.cancel();
-    });
-  }
+        # Shared camera data (thread-safe)
+        self._lock = threading.Lock()
+        self._latest_display: Optional[np.ndarray] = None
+        self._latest_result: Optional[Dict] = None
+        self._latest_fps: float = 0.0
+        self._ui_after_id: Optional[str] = None
+        self._last_frame_time = time.time()
 
-  void _scheduleRebuild() {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 180), () {
-      if (mounted) _rebuild();
-    });
-  }
+        # Current frame/result
+        self.current_frame: Optional[np.ndarray] = None
+        self.current_result: Optional[Dict] = None
 
-  void _togglePlay() {
-    setState(() => playing = !playing);
-    if (playing) {
-      animTimer = Timer.periodic(const Duration(milliseconds: 25), (t) {
-        if (!playing || simResult == null) { t.cancel(); return; }
-        setState(() {
-          animIdx += 2;
-          if (animIdx >= simResult!.path.length) {
-            animIdx = simResult!.path.length - 1;
-            playing = false; t.cancel();
-          }
-        });
-      });
-    } else { animTimer?.cancel(); }
-  }
+        self.processed = False
 
-  void _reset() {
-    animTimer?.cancel();
-    setState(() { animIdx = 0; playing = false; });
-  }
+        self._bind_callbacks()
+        self._set_default_instructions()
 
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Row(children: [
-        Icon(Icons.sports_score, color: Color(0xFF6366F1), size: 22),
-        SizedBox(width: 10),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('BOWLING SIMULATOR', style: TextStyle(fontSize: 13,
-            fontWeight: FontWeight.w700, color: Color(0xFFA0A6D0), letterSpacing: 1.5)),
-          Text('Physics Engine v14', style: TextStyle(fontSize: 10,
-            color: Color(0xFF8A91B8))),
-        ]),
-      ]),
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(46),
-        child: Container(
-          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFF242736)))),
-          child: TabBar(
-            controller: _tabs, isScrollable: true,
-            labelColor: Colors.white,
-            unselectedLabelColor: const Color(0xFF8A91B8),
-            indicatorColor: const Color(0xFF6366F1),
-            indicatorWeight: 3,
-            labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5),
-            tabs: const [
-              Tab(text: 'BOWLER'), Tab(text: 'BALL'), Tab(text: 'PATTERN'),
-              Tab(text: 'LANE'), Tab(text: 'OIL MAP'),
-            ],
-          ),
-        ),
-      ),
-    ),
-    body: TabBarView(controller: _tabs, children: [
-      _BowlerTab(bowler: bowler, onChanged: (b) { bowler = b; _scheduleRebuild(); }),
-      _BallTab(ball: ball, onChanged: (b) { ball = b; _scheduleRebuild(); }),
-      _PatternTab(pattern: pattern, onChanged: (p) { pattern = p; _scheduleRebuild(); }),
-      _LaneTab(simResult: simResult, oilMatrix: oilMatrix,
-        animIdx: animIdx, playing: playing,
-        onPlay: _togglePlay, onReset: _reset, onRecalc: _rebuild),
-      _OilMapTab(oilMatrix: oilMatrix, pattern: pattern),
-    ]),
-  );
-}
+    # ---------------------------------------------------------------------
+    # GUI bindings
+    # ---------------------------------------------------------------------
 
-// ─── Shared widgets ─────────────────────────────────────────
-class _Section extends StatelessWidget {
-  final String title;
-  const _Section(this.title);
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 20, bottom: 10),
-    child: Text(title.toUpperCase(), style: const TextStyle(
-      fontSize: 11, fontWeight: FontWeight.w600,
-      color: Color(0xFF6366F1), letterSpacing: 1.2)),
-  );
-}
+    def _bind_callbacks(self):
+        self.gui.on_start_camera = self.start_camera
+        self.gui.on_stop_camera = self.stop_camera
+        self.gui.on_capture = self.capture_view
+        self.gui.on_reset = self.reset_captures
+        self.gui.on_process = self.process_captures
+        self.gui.on_style_change = self.change_style
+        self.gui.on_celebrity_select = self.select_celebrity
+        self.gui.on_export_image = self.export_image
+        self.gui.on_export_guide = self.export_guide
 
-class _Slider extends StatelessWidget {
-  final String label, sublabel;
-  final double value, min, max, step;
-  final ValueChanged<double> onChanged;
-  final String unit;
-  const _Slider(this.label, this.sublabel, this.value, this.min, this.max, this.step,
-    this.onChanged, {this.unit = ''});
-  @override
-  Widget build(BuildContext context) {
-    final int divs = ((max - min) / step).round();
-    return Padding(padding: const EdgeInsets.only(bottom: 12),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500)),
-            if (sublabel.isNotEmpty)
-              Text(sublabel, style: const TextStyle(fontSize: 10, color: Color(0xFF8A91B8))),
-          ])),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFF242736),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text('${value.toStringAsFixed(step < 1 ? (step < 0.01 ? 3 : 2) : 0)}$unit',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF6366F1))),
-          ),
-        ]),
-        Slider(
-          value: value.clamp(min, max), min: min, max: max,
-          divisions: divs > 0 ? divs : null,
-          onChanged: onChanged,
-        ),
-      ]));
-  }
-}
+    def _set_default_instructions(self):
+        self.gui.set_instructions(
+            [
+                {
+                    "step": 1,
+                    "name": "Capture",
+                    "description": "Start camera → capture LEFT, CENTER, RIGHT → Process.",
+                    "tips": ["Make sure your face is centered", "Good lighting helps"],
+                }
+            ]
+        )
 
-class _Toggle extends StatelessWidget {
-  final String label, sublabel;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-  const _Toggle(this.label, this.sublabel, this.value, this.onChanged);
-  @override
-  Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.only(bottom: 12),
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-    decoration: BoxDecoration(
-      color: const Color(0xFF1A1B26),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: const Color(0xFF2A2D3A)),
-    ),
-    child: Row(children: [
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500)),
-        if (sublabel.isNotEmpty)
-          Text(sublabel, style: const TextStyle(fontSize: 10, color: Color(0xFF8A91B8))),
-      ])),
-      Switch(value: value, onChanged: onChanged, activeColor: const Color(0xFF6366F1)),
-    ]),
-  );
-}
+    # ---------------------------------------------------------------------
+    # Camera controls
+    # ---------------------------------------------------------------------
 
-class _InfoCard extends StatelessWidget {
-  final String label, value; final Color? valueColor;
-  const _InfoCard(this.label, this.value, {this.valueColor});
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-    decoration: BoxDecoration(
-      color: const Color(0xFF1A1B26),
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: const Color(0xFF2A2D3A)),
-    ),
-    child: Column(children: [
-      Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700,
-        color: valueColor ?? Colors.white)),
-      const SizedBox(height: 2),
-      Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF8A91B8))),
-    ]),
-  );
-}
+    def start_camera(self):
+        if self.camera_running:
+            return
 
-// ─── Bowler Tab ──────────────────────────────────────────────
-class _BowlerTab extends StatefulWidget {
-  final BowlerInputs bowler; final ValueChanged<BowlerInputs> onChanged;
-  const _BowlerTab({required this.bowler, required this.onChanged});
-  @override State<_BowlerTab> createState() => _BowlerTabState();
-}
-class _BowlerTabState extends State<_BowlerTab> {
-  late BowlerInputs b;
-  @override void initState() { super.initState(); b = widget.bowler; }
-  void _emit() => widget.onChanged(b);
+        import platform
 
-  @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    padding: const EdgeInsets.all(20),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const _Section('Release Mode'),
-      _Toggle('Release Mode', 'ON: set angle + release board  |  OFF: set landing board directly',
-        b.useReleaseMode, (v) { setState(() => b.useReleaseMode = v); _emit(); }),
+        backends = [cv2.CAP_ANY]
+        if platform.system() == "Windows":
+            backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
+        elif platform.system() == "Linux":
+            backends = [cv2.CAP_V4L2, cv2.CAP_ANY]
+        elif platform.system() == "Darwin":
+            backends = [cv2.CAP_AVFOUNDATION, cv2.CAP_ANY]
 
-      if (b.useReleaseMode) ...[
-        const _Section('Release Geometry'),
-        _Slider('Release Board', 'Board at foul line where ball leaves hand',
-          b.releaseBoard, 1, 39, 1, (v) { setState(() => b.releaseBoard = v); _emit(); }),
-        _Slider('Launch Angle', '° from centerline — positive = toward arrows',
-          b.angleDeg, -10, 10, 0.5, (v) { setState(() => b.angleDeg = v); _emit(); }, unit: '°'),
-        Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: const Color(0xFF1A1B26),
-            borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF2A2D3A))),
-          child: Row(children: [
-            const Icon(Icons.info_outline, size: 14, color: Color(0xFF6366F1)),
-            const SizedBox(width: 8),
-            Text('Landing board: ${b.computedLandBoard.toStringAsFixed(1)}',
-              style: const TextStyle(fontSize: 12, color: Color(0xFFA0A6D0))),
-          ]),
-        ),
-      ] else ...[
-        const _Section('Target'),
-        _Slider('Landing Board', 'Board where ball first contacts lane',
-          b.landBoard.toDouble(), 1, 39, 1,
-          (v) { setState(() => b.landBoard = v.round()); _emit(); }),
-        Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: const Color(0xFF1A1B26),
-            borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF2A2D3A))),
-          child: Row(children: [
-            const Icon(Icons.info_outline, size: 14, color: Color(0xFF6366F1)),
-            const SizedBox(width: 8),
-            Text('Launch angle: ${b.computedAngleDeg.toStringAsFixed(1)}°  |  Release board: ${b.releaseBoard.toStringAsFixed(1)}',
-              style: const TextStyle(fontSize: 12, color: Color(0xFFA0A6D0))),
-          ]),
-        ),
-        _Slider('Release Board', 'For angle computation',
-          b.releaseBoard, 1, 39, 1, (v) { setState(() => b.releaseBoard = v); _emit(); }),
-      ],
+        self.cap = None
+        for backend in backends:
+            for idx in [0, 1, 2]:
+                try:
+                    cap = cv2.VideoCapture(idx, backend)
+                    if cap.isOpened():
+                        ok, _ = cap.read()
+                        if ok:
+                            self.cap = cap
+                            break
+                    cap.release()
+                except Exception:
+                    continue
+            if self.cap and self.cap.isOpened():
+                break
 
-      const _Section('Delivery'),
-      _Slider('Ball Speed', 'mph at release',
-        b.speedMph, 10, 24, 0.5, (v) { setState(() => b.speedMph = v); _emit(); }, unit: ' mph'),
-      _Slider('Rev Rate', 'RPM at release',
-        b.revRPM, 50, 500, 10, (v) { setState(() => b.revRPM = v); _emit(); }, unit: ' rpm'),
+        if not self.cap or not self.cap.isOpened():
+            self.gui.show_message("Error", "No camera found (tried indices 0-2)", "error")
+            return
 
-      const _Section('Axis'),
-      _Slider('Axis Rotation', '0°=end-over-end  90°=full side roll',
-        b.axisRotation, -90, 90, 1, (v) { setState(() => b.axisRotation = v); _emit(); }, unit: '°'),
-      _Slider('Axis Tilt', '0°=flat  90°=spinning top',
-        b.axisTilt, 0, 90, 1, (v) { setState(() => b.axisTilt = v); _emit(); }, unit: '°'),
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-      const _Section('Handedness'),
-      Row(children: [
-        Expanded(child: _HandBtn('Right', b.handedness == 1.0,
-          () { setState(() => b.handedness = 1.0); _emit(); })),
-        const SizedBox(width: 12),
-        Expanded(child: _HandBtn('Left', b.handedness == -1.0,
-          () { setState(() => b.handedness = -1.0); _emit(); })),
-      ]),
+        try:
+            self.engine.detector.reset_smoothing()
+        except Exception:
+            pass
 
-      const _Section('Calibration'),
-      _Slider('Hook K0', 'Base calibration  1.0=normal',
-        b.hookK0, 0.2, 3.0, 0.1, (v) { setState(() => b.hookK0 = v); _emit(); }),
-    ]),
-  );
-}
+        self.camera_running = True
+        self.camera_thread = threading.Thread(target=self._camera_loop, daemon=True)
+        self.camera_thread.start()
 
-class _HandBtn extends StatelessWidget {
-  final String label; final bool active; final VoidCallback onTap;
-  const _HandBtn(this.label, this.active, this.onTap);
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(
-        color: active ? const Color(0xFF6366F1) : const Color(0xFF1A1B26),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: active ? const Color(0xFF6366F1) : const Color(0xFF2A2D3A)),
-      ),
-      child: Center(child: Text(label, style: TextStyle(
-        fontSize: 13, fontWeight: FontWeight.w600,
-        color: active ? Colors.white : const Color(0xFF8A91B8)))),
-    ),
-  );
-}
+        # Start UI tick (throttled) – avoids Tk event-queue flooding
+        self._schedule_ui_tick()
 
-// ─── Ball Tab ────────────────────────────────────────────────
-class _BallTab extends StatefulWidget {
-  final BallSpecs ball; final ValueChanged<BallSpecs> onChanged;
-  const _BallTab({required this.ball, required this.onChanged});
-  @override State<_BallTab> createState() => _BallTabState();
-}
-class _BallTabState extends State<_BallTab> {
-  late BallSpecs b;
-  @override void initState() { super.initState(); b = widget.ball; }
-  void _emit() => widget.onChanged(b);
+        self.gui.update_status("Camera: ON", SUCCESS_COLOR)
 
-  @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    padding: const EdgeInsets.all(20),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const _Section('Core Specs'),
-      _Slider('RG', '2.46=early read  2.80=more length',
-        b.rg, 2.46, 2.80, 0.01, (v) { setState(() => b.rg = v); _emit(); }, unit: '"'),
-      _Slider('Differential', 'Controls flare potential',
-        b.diff, 0.0, 0.060, 0.001, (v) { setState(() => b.diff = v); _emit(); }, unit: '"'),
-      _Slider('Asymmetry', '0=symmetric  ≥0.013=asymmetric',
-        b.asy, 0.0, 0.030, 0.001, (v) { setState(() => b.asy = v); _emit(); }, unit: '"'),
+    def stop_camera(self):
+        self.camera_running = False
 
-      const _Section('Cover'),
-      _Slider('Ball Weight', 'lbs',
-        b.masslb, 10, 16, 0.5, (v) { setState(() => b.masslb = v); _emit(); }, unit: ' lb'),
-      Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        decoration: BoxDecoration(color: const Color(0xFF1A1B26),
-          borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF2A2D3A))),
-        child: DropdownButtonHideUnderline(child: DropdownButton<String>(
-          value: b.grit,
-          isExpanded: true,
-          dropdownColor: const Color(0xFF242736),
-          style: const TextStyle(fontSize: 13, color: Colors.white),
-          items: const [
-            DropdownMenuItem(value:'500',  child: Text('500 — very rough (sanded solid)')),
-            DropdownMenuItem(value:'1000', child: Text('1000 — rough')),
-            DropdownMenuItem(value:'2000', child: Text('2000 — medium')),
-            DropdownMenuItem(value:'3000', child: Text('3000 — smooth')),
-            DropdownMenuItem(value:'4000', child: Text('4000 — very smooth')),
-            DropdownMenuItem(value:'polish', child: Text('Polish (pearl / shiny)')),
-          ],
-          onChanged: (v) { if (v!=null) { setState(()=>b.grit=v); _emit(); }},
-        )),
-      ),
+        if self._ui_after_id is not None:
+            try:
+                self.root.after_cancel(self._ui_after_id)
+            except Exception:
+                pass
+            self._ui_after_id = None
 
-      const _Section('Computed Factors'),
-      Row(children: [
-        Expanded(child: _InfoCard('RG Factor', b.rgFactor.toStringAsFixed(3),
-          valueColor: b.rgFactor > 1.0 ? Colors.greenAccent : const Color(0xFFA0A6D0))),
-        const SizedBox(width: 8),
-        Expanded(child: _InfoCard('Diff Factor', b.diffFactor.toStringAsFixed(3),
-          valueColor: b.diffFactor > 1.0 ? Colors.orangeAccent : const Color(0xFFA0A6D0))),
-        const SizedBox(width: 8),
-        Expanded(child: _InfoCard('Asym Factor', b.asymFactor.toStringAsFixed(3),
-          valueColor: b.isAsym ? Colors.purpleAccent : const Color(0xFF8A91B8))),
-      ]),
-      const SizedBox(height: 8),
-      Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: const Color(0xFF1A1B26),
-          borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF2A2D3A))),
-        child: Row(children: [
-          Icon(b.isAsym ? Icons.compare_arrows : Icons.circle_outlined,
-            size: 16, color: b.isAsym ? Colors.purpleAccent : const Color(0xFF8A91B8)),
-          const SizedBox(width: 8),
-          Text(b.isAsym ? 'Asymmetric (asy ≥ 0.013)' : 'Symmetric',
-            style: TextStyle(fontSize: 12,
-              color: b.isAsym ? Colors.purpleAccent : const Color(0xFF8A91B8))),
-        ]),
-      ),
+        if self.camera_thread:
+            self.camera_thread.join(timeout=1.0)
+            self.camera_thread = None
 
-      const _Section('Reference'),
-      Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: const Color(0xFF0F1018),
-          borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF2A2D3A))),
-        child: const Text(
-          'RG:   2.46–2.49 = early   2.50–2.56 = medium   2.57+ = long\n'
-          'Diff: 0.000–0.029 = low   0.030–0.045 = med   0.046+ = high\n'
-          'Asy:  0 = symmetric   ≥0.013 = asymmetric (industry heuristic)',
-          style: TextStyle(fontSize: 10, color: Color(0xFF8A91B8), height: 1.7,
-            fontFamily: 'monospace')),
-      ),
-    ]),
-  );
-}
+        if self.cap:
+            try:
+                self.cap.release()
+            except Exception:
+                pass
+            self.cap = None
 
-// ─── Pattern Tab ─────────────────────────────────────────────
-class _PatternTab extends StatefulWidget {
-  final PatternData pattern; final ValueChanged<PatternData> onChanged;
-  const _PatternTab({required this.pattern, required this.onChanged});
-  @override State<_PatternTab> createState() => _PatternTabState();
-}
-class _PatternTabState extends State<_PatternTab> {
-  late PatternData p;
-  @override void initState() { super.initState(); p = widget.pattern; }
+        self.gui.update_status("Camera: OFF", WARNING_COLOR)
 
-  @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    padding: const EdgeInsets.all(20),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        Expanded(child: TextField(
-          controller: TextEditingController(text: p.name)..selection =
-            TextSelection.collapsed(offset: p.name.length),
-          style: const TextStyle(fontSize: 13),
-          decoration: const InputDecoration(labelText: 'Pattern Name',
-            labelStyle: TextStyle(fontSize: 11, color: Color(0xFF8A91B8))),
-          onChanged: (v) => setState(() => p.name = v),
-          onSubmitted: (_) => widget.onChanged(p),
-        )),
-        const SizedBox(width: 12),
-        SizedBox(width: 90, child: TextField(
-          controller: TextEditingController(text: p.distance.toStringAsFixed(0)),
-          style: const TextStyle(fontSize: 13),
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: 'Dist (ft)',
-            labelStyle: TextStyle(fontSize: 11, color: Color(0xFF8A91B8))),
-          onSubmitted: (v) {
-            setState(() => p.distance = double.tryParse(v) ?? p.distance);
-            widget.onChanged(p);
-          },
-        )),
-      ]),
-      const _Section('Forward Loads'),
-      _buildLoadTable(p.fwdRows, (rows) { setState(() => p.fwdRows = rows); widget.onChanged(p); }),
-      TextButton.icon(
-        onPressed: () {
-          setState(() => p.fwdRows.add(const LoadRow(sl:2,sr:2,loads:1,mics:50,buff:500,d0:0,d1:5,toil:0)));
-          widget.onChanged(p);
-        },
-        icon: const Icon(Icons.add, size: 16), label: const Text('Add Row'),
-      ),
-      const _Section('Reverse Loads'),
-      _buildLoadTable(p.revRows, (rows) { setState(() => p.revRows = rows); widget.onChanged(p); }),
-      TextButton.icon(
-        onPressed: () {
-          setState(() => p.revRows.add(const LoadRow(sl:2,sr:2,loads:1,mics:50,buff:500,d0:0,d1:5,toil:0)));
-          widget.onChanged(p);
-        },
-        icon: const Icon(Icons.add, size: 16), label: const Text('Add Row'),
-      ),
-    ]),
-  );
+    def _camera_loop(self):
+        while self.camera_running and self.cap:
+            try:
+                ok, frame = self.cap.read()
+                if not ok:
+                    continue
 
-  Widget _buildLoadTable(List<LoadRow> rows, ValueChanged<List<LoadRow>> onChanged) =>
-    SingleChildScrollView(scrollDirection: Axis.horizontal,
-      child: DataTable(
-        columnSpacing: 8, headingRowHeight: 28,
-        dataRowMinHeight: 36, dataRowMaxHeight: 36,
-        headingTextStyle: const TextStyle(fontSize: 10, color: Color(0xFF8A91B8), fontWeight: FontWeight.w600),
-        dataTextStyle: const TextStyle(fontSize: 11, color: Colors.white),
-        columns: const [
-          DataColumn(label: Text('#')), DataColumn(label: Text('SL')), DataColumn(label: Text('SR')),
-          DataColumn(label: Text('Loads')), DataColumn(label: Text('MICS')), DataColumn(label: Text('BUFF')),
-          DataColumn(label: Text('Ft0')), DataColumn(label: Text('Ft1')), DataColumn(label: Text('T.OIL')),
-          DataColumn(label: Text('×')),
-        ],
-        rows: rows.asMap().entries.map((e) {
-          final i=e.key; final r=e.value;
-          return DataRow(cells: [
-            DataCell(Text('${i+1}', style: const TextStyle(color: Color(0xFF8A91B8)))),
-            DataCell(_mf(r.sl.toString(), (v){final u=List<LoadRow>.from(rows);u[i]=r.copyWith(sl:int.tryParse(v)??r.sl);onChanged(u);})),
-            DataCell(_mf(r.sr.toString(), (v){final u=List<LoadRow>.from(rows);u[i]=r.copyWith(sr:int.tryParse(v)??r.sr);onChanged(u);})),
-            DataCell(_mf(r.loads.toString(), (v){final u=List<LoadRow>.from(rows);u[i]=r.copyWith(loads:int.tryParse(v)??r.loads);onChanged(u);})),
-            DataCell(_mf(r.mics.toString(), (v){final u=List<LoadRow>.from(rows);u[i]=r.copyWith(mics:int.tryParse(v)??r.mics);onChanged(u);})),
-            DataCell(_mf(r.buff.toString(), (v){final u=List<LoadRow>.from(rows);u[i]=r.copyWith(buff:int.tryParse(v)??r.buff);onChanged(u);})),
-            DataCell(_mf(r.d0.toString(), (v){final u=List<LoadRow>.from(rows);u[i]=r.copyWith(d0:double.tryParse(v)??r.d0);onChanged(u);})),
-            DataCell(_mf(r.d1.toString(), (v){final u=List<LoadRow>.from(rows);u[i]=r.copyWith(d1:double.tryParse(v)??r.d1);onChanged(u);})),
-            DataCell(_mf(r.toil.toString(), (v){final u=List<LoadRow>.from(rows);u[i]=r.copyWith(toil:double.tryParse(v)??r.toil);onChanged(u);})),
-            DataCell(IconButton(
-              icon: const Icon(Icons.close, size: 14, color: Color(0xFF8A91B8)),
-              onPressed: () { final u=List<LoadRow>.from(rows)..removeAt(i); onChanged(u); },
-            )),
-          ]);
-        }).toList(),
-      ));
+                frame = cv2.flip(frame, 1)
+                self.current_frame = frame.copy()
 
-  Widget _mf(String v, ValueChanged<String> cb) => SizedBox(width: 46,
-    child: TextFormField(initialValue: v, keyboardType: TextInputType.number,
-      style: const TextStyle(fontSize: 11),
-      decoration: const InputDecoration(isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-        fillColor: Color(0xFF0F1018)),
-      onChanged: cb));
-}
+                try:
+                    result = self.engine.process_frame(frame)
+                except Exception:
+                    result = None
 
-// ─── Lane Tab ────────────────────────────────────────────────
-class _LaneTab extends StatelessWidget {
-  final SimResult? simResult;
-  final List<List<double>> oilMatrix;
-  final int animIdx; final bool playing;
-  final VoidCallback onPlay, onReset, onRecalc;
-  const _LaneTab({required this.simResult, required this.oilMatrix,
-    required this.animIdx, required this.playing,
-    required this.onPlay, required this.onReset, required this.onRecalc});
+                self.current_result = result
 
-  @override
-  Widget build(BuildContext context) {
-    final r    = simResult;
-    final path = r?.path ?? [];
-    final cur  = animIdx < path.length ? path[animIdx] : null;
+                # FPS
+                now = time.time()
+                dt = now - self._last_frame_time
+                self._last_frame_time = now
+                fps = 1.0 / max(dt, 1e-3)
 
-    final Color phaseColor = cur == null ? Colors.grey
-      : cur.phase == 'roll'  ? Colors.greenAccent
-      : cur.phase == 'hook'  ? Colors.orangeAccent
-      : Colors.redAccent;
+                display = self._draw_overlay(frame, result)
 
-    return Column(children: [
-      // Pin stats bar
-      if (r != null) Container(
-        color: const Color(0xFF0F1018),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(children: [
-          Expanded(child: _InfoCard('Pin Speed',
-            '${r.pinSpeed.toStringAsFixed(1)} mph',
-            valueColor: r.pinSpeed>=15&&r.pinSpeed<=17 ? Colors.greenAccent : Colors.orangeAccent)),
-          const SizedBox(width: 8),
-          Expanded(child: _InfoCard('Pin RPM',
-            r.pinRPM.toStringAsFixed(0))),
-          const SizedBox(width: 8),
-          Expanded(child: _InfoCard('Pin AR',
-            '${r.pinAR.toStringAsFixed(1)}°')),
-          const SizedBox(width: 8),
-          Expanded(child: _InfoCard('Pin Board',
-            r.pinBoard.toStringAsFixed(1),
-            valueColor: r.pinBoard>=16&&r.pinBoard<=18 ? Colors.greenAccent : Colors.white)),
-        ]),
-      ),
+                with self._lock:
+                    self._latest_display = display
+                    self._latest_result = result
+                    # simple EMA fps smoothing
+                    self._latest_fps = 0.85 * self._latest_fps + 0.15 * fps
+            except Exception:
+                continue
 
-      // Live HUD
-      Container(
-        color: const Color(0xFF1A1B26),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(children: [
-          _liveChip('Phase', cur?.phase.toUpperCase() ?? '—', phaseColor),
-          const SizedBox(width: 8),
-          _liveChip('Speed', cur != null ? '${cur.vx.toStringAsFixed(1)} mph' : '—', Colors.white),
-          const SizedBox(width: 8),
-          _liveChip('RPM', cur != null ? '${(cur.omega*60/(2*pi)).toStringAsFixed(0)}' : '—', Colors.white),
-          const SizedBox(width: 8),
-          _liveChip('Board', cur != null ? cur.board.toStringAsFixed(1) : '—', Colors.white),
-          const SizedBox(width: 8),
-          _liveChip('AR', cur != null ? '${cur.AR.toStringAsFixed(1)}°' : '—', Colors.white70),
-          const SizedBox(width: 8),
-          _liveChip('Oil', cur != null ? '${(cur.oil*100).toStringAsFixed(0)}%' : '—',
-            const Color(0xFF6366F1)),
-        ]),
-      ),
+    def _schedule_ui_tick(self):
+        self._ui_after_id = self.root.after(33, self._ui_tick)  # ~30fps
 
-      // Controls
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(children: [
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6366F1),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: onPlay,
-            icon: Icon(playing ? Icons.pause : Icons.play_arrow, size: 18),
-            label: Text(playing ? 'Pause' : 'Play'),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFF2A2D3A)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: onReset, child: const Text('Reset'),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFF2A2D3A)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: onRecalc, child: const Text('Recalc'),
-          ),
-          const Spacer(),
-          // Phase legend
-          _phaseDot(Colors.redAccent, 'Skid'),
-          const SizedBox(width: 8),
-          _phaseDot(Colors.orangeAccent, 'Hook'),
-          const SizedBox(width: 8),
-          _phaseDot(Colors.greenAccent, 'Roll'),
-        ]),
-      ),
+    def _ui_tick(self):
+        if not self.camera_running:
+            return
 
-      // Lane canvas
-      Expanded(child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF2A2D3A)),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: CustomPaint(
-            painter: LanePainter(path: path, oilMatrix: oilMatrix, animIdx: animIdx),
-            child: Container(),
-          ),
-        ),
-      )),
-    ]);
-  }
+        with self._lock:
+            frame = None if self._latest_display is None else self._latest_display.copy()
+            result = self._latest_result
+            fps = float(self._latest_fps)
 
-  Widget _liveChip(String lbl, String val, Color c) => Expanded(child: Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Text(val, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c)),
-      Text(lbl, style: const TextStyle(fontSize: 9, color: Color(0xFF8A91B8))),
-    ]));
+        if frame is not None:
+            self.gui.update_video(frame)
+            self.gui.update_fps(fps)
+            self.gui.update_captures(self.capture_state.captured)
 
-  Widget _phaseDot(Color c, String lbl) => Row(mainAxisSize: MainAxisSize.min, children: [
-    Container(width: 8, height: 8, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
-    const SizedBox(width: 4),
-    Text(lbl, style: const TextStyle(fontSize: 10, color: Color(0xFF8A91B8))),
-  ]);
-}
+            if result:
+                yaw = result.get("yaw", 0.0)
+                pitch = result.get("pitch", 0.0)
+                view = self.capture_state.current_view
+                self.gui.update_pose(yaw, pitch, view)
 
-// ─── Oil Map Tab ─────────────────────────────────────────────
-class _OilMapTab extends StatefulWidget {
-  final List<List<double>> oilMatrix;
-  final PatternData pattern;
-  const _OilMapTab({required this.oilMatrix, required this.pattern});
-  @override State<_OilMapTab> createState() => _OilMapTabState();
-}
+        self._schedule_ui_tick()
 
-class _OilMapTabState extends State<_OilMapTab> {
-  bool show3D = false;
+    def _draw_overlay(self, frame: np.ndarray, result: Optional[Dict]) -> np.ndarray:
+        display = frame.copy()
+        h, w = display.shape[:2]
 
-  // Shared rainbow color scale — same in both 2D and 3D
-  static const List<List<dynamic>> _stops = [
-    [0.00, Color(0xFF32140A)],  // dry — very dark brown
-    [0.12, Color(0xFF8B4513)],  // trace
-    [0.28, Color(0xFFC0392B)],  // light
-    [0.42, Color(0xFFE67E22)],  // medium-light
-    [0.56, Color(0xFFF1C40F)],  // medium
-    [0.68, Color(0xFF2ECC71)],  // medium-heavy
-    [0.80, Color(0xFF2980B9)],  // heavy
-    [1.00, Color(0xFF8E44AD)],  // max — purple
-  ];
+        if result:
+            pts = result["pts"]
+            yaw = float(result["yaw"])
+            pitch = float(result["pitch"])
 
-  static const List<String> _stopLabels = [
-    'Dry', 'Trace', 'Light', 'Med-light',
-    'Medium', 'Med-heavy', 'Heavy', 'Max',
-  ];
+            # sparse face mesh
+            for i in range(0, len(pts), 10):
+                x, y = int(pts[i][0]), int(pts[i][1])
+                cv2.circle(display, (x, y), 1, (0, 255, 0), -1)
 
-  static Color oilColor(double v) {
-    for (int i = 1; i < _stops.length; i++) {
-      if (v <= (_stops[i][0] as double)) {
-        final t = (v - (_stops[i-1][0] as double)) /
-                  ((_stops[i][0] as double) - (_stops[i-1][0] as double));
-        final a = _stops[i-1][1] as Color;
-        final b = _stops[i][1] as Color;
-        return Color.fromRGBO(
-          (a.red   + (b.red   - a.red)   * t).round(),
-          (a.green + (b.green - a.green) * t).round(),
-          (a.blue  + (b.blue  - a.blue)  * t).round(), 1);
-      }
-    }
-    return const Color(0xFF8E44AD);
-  }
+            view = self.capture_state.current_view
+            ok, msg = check_pose(view, yaw, pitch, self.pose_config)
+            color = (0, 255, 0) if ok else (0, 165, 255)
 
-  @override
-  Widget build(BuildContext context) => Column(children: [
-    // Header + toggle
-    Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Row(children: [
-        Text('OIL VISUALIZATION', style: Theme.of(context).textTheme.labelSmall
-          ?.copyWith(color: const Color(0xFF6366F1), letterSpacing: 1.2)),
-        const Spacer(),
-        const Text('2D', style: TextStyle(fontSize: 12, color: Color(0xFF8A91B8))),
-        Switch(value: show3D, onChanged: (v) => setState(() => show3D = v),
-          activeColor: const Color(0xFF6366F1)),
-        const Text('3D', style: TextStyle(fontSize: 12, color: Color(0xFF8A91B8))),
-      ]),
-    ),
+            cv2.putText(display, f"View: {view}", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+            cv2.putText(display, msg, (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
-    // Map canvas
-    Expanded(child: Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F1018),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF2A2D3A)),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: show3D
-          ? CustomPaint(painter: _3DOilPainter(
-              oilMatrix: widget.oilMatrix,
-              distance: widget.pattern.distance,
-              colorFn: oilColor))
-          : CustomPaint(painter: OilMapPainter(
-              oilMatrix: widget.oilMatrix,
-              distance: widget.pattern.distance,
-              name: widget.pattern.name)),
-      ),
-    )),
+            cv2.putText(display, f"Yaw: {yaw:+.1f}", (w - 130, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(display, f"Pitch: {pitch:+.1f}", (w - 130, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-    // ── Color legend — individual swatches with labels ────────
-    Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1B26),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF2A2D3A)),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('OIL LEVEL', style: TextStyle(
-          fontSize: 9, fontWeight: FontWeight.w600,
-          color: Color(0xFF6366F1), letterSpacing: 1.0)),
-        const SizedBox(height: 8),
-        Row(children: [
-          _swatch(const Color(0xFF32140A), 'Dry'),
-          _swatch(const Color(0xFF8B4513), 'Trace'),
-          _swatch(const Color(0xFFC0392B), 'Light'),
-          _swatch(const Color(0xFFE67E22), 'Med-Lt'),
-          _swatch(const Color(0xFFF1C40F), 'Medium'),
-          _swatch(const Color(0xFF2ECC71), 'Med-Hvy'),
-          _swatch(const Color(0xFF2980B9), 'Heavy'),
-          _swatch(const Color(0xFF8E44AD), 'Max'),
-        ]),
-      ]),
-    ),
+            arrow_x = int(w / 2 + yaw * 2)
+            arrow_y = int(h / 2 + pitch * 2)
+            cv2.arrowedLine(display, (w // 2, h // 2), (arrow_x, arrow_y), color, 2, tipLength=0.3)
+        else:
+            cv2.putText(display, "No face detected", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-    // Pattern info
-    Container(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-        _patInfo('Length', '${widget.pattern.distance.toInt()} ft'),
-        _patInfo('Pattern', widget.pattern.name),
-        _patInfo('Fwd rows', '${widget.pattern.fwdRows.length}'),
-        _patInfo('Rev rows', '${widget.pattern.revRows.length}'),
-      ]),
-    ),
-  ]);
+        # capture status
+        status = []
+        for v, c in zip(["L", "C", "R"], self.capture_state.captured):
+            status.append(f"[{v}{'✓' if c else ' '}]")
+        cv2.putText(display, " ".join(status), (20, h - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
 
-  Widget _patInfo(String l, String v) => Column(children: [
-    Text(v, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
-    Text(l, style: const TextStyle(fontSize: 10, color: Color(0xFF8A91B8))),
-  ]);
+        return display
 
-  Widget _swatch(Color color, String label) => Expanded(child:
-    Column(children: [
-      Container(
-        height: 14,
-        margin: const EdgeInsets.symmetric(horizontal: 1),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(3)),
-      ),
-      const SizedBox(height: 3),
-      Text(label,
-        textAlign: TextAlign.center,
-        style: const TextStyle(fontSize: 7.5, color: Color(0xFF8A91B8)),
-      ),
-    ]));
-}
+    # ---------------------------------------------------------------------
+    # Capture controls
+    # ---------------------------------------------------------------------
 
-// ─── 3D Oil Painter ───────────────────────────────────────────
-class _3DOilPainter extends CustomPainter {
-  final List<List<double>> oilMatrix;
-  final double distance;
-  final Color Function(double) colorFn;
-  const _3DOilPainter({
-    required this.oilMatrix,
-    required this.distance,
-    required this.colorFn,
-  });
+    def capture_view(self):
+        if self.capture_state.all_captured:
+            self.gui.show_message("Info", "All views captured. Press Process or Reset.")
+            return
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Rect.fromLTWH(0,0,size.width,size.height),
-      Paint()..color = const Color(0xFF111111));
-    if (oilMatrix.isEmpty) return;
+        if self.current_frame is None or self.current_result is None:
+            self.gui.show_message("Warning", "No frame available", "warning")
+            return
 
-    const int B = 39;
-    final dist = distance.toInt();
-    final iX = size.width * 0.5, iY = size.height * 0.88;
-    final sX = size.width / B * 0.52;
-    final sY = size.height * 0.42, sZ = size.height * 0.42;
+        view = self.capture_state.current_view
+        yaw = float(self.current_result.get("yaw", 0.0))
+        pitch = float(self.current_result.get("pitch", 0.0))
 
-    Offset proj(int b, int f, double v) {
-      final bx = (b - B / 2) * sX;
-      final fy = (dist - f) * sY / dist;
-      final oz = v * sZ;
-      return Offset(iX + bx * 0.98 - fy * 0.42, iY - fy * 0.52 - oz + bx * 0.07);
-    }
+        ok, msg = check_pose(view, yaw, pitch, self.pose_config)
+        if not ok:
+            self.gui.show_message("Pose Error", f"Cannot capture: {msg}", "warning")
+            return
 
-    for (int f = 0; f < dist - 1 && f < oilMatrix[0].length - 1; f++) {
-      for (int b = 0; b < B - 1 && b < oilMatrix.length - 1; b++) {
-        final v = oilMatrix[b][f];
-        final p = Path()
-          ..moveTo(proj(b,   f,   v).dx,                      proj(b,   f,   v).dy)
-          ..lineTo(proj(b+1, f,   oilMatrix[b+1][f]).dx,      proj(b+1, f,   oilMatrix[b+1][f]).dy)
-          ..lineTo(proj(b+1, f+1, oilMatrix[b+1][f+1]).dx,    proj(b+1, f+1, oilMatrix[b+1][f+1]).dy)
-          ..lineTo(proj(b,   f+1, oilMatrix[b][f+1]).dx,      proj(b,   f+1, oilMatrix[b][f+1]).dy)
-          ..close();
-        canvas.drawPath(p, Paint()..color = colorFn(v));
-        canvas.drawPath(p, Paint()
-          ..color = Colors.black.withOpacity(0.10)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 0.25);
-      }
-    }
-  }
+        success = self.engine.capture_view(self.current_frame, view)
+        if success:
+            self.capture_state.mark_captured()
+            self.gui.update_captures(self.capture_state.captured)
+            self.gui.update_status(f"Captured {view}!", SUCCESS_COLOR)
+            if self.capture_state.all_captured:
+                self.gui.update_status("All views captured! Press Process.", SUCCESS_COLOR)
+        else:
+            self.gui.show_message("Error", "Capture failed", "error")
 
-  @override
-  bool shouldRepaint(_3DOilPainter o) =>
-    o.oilMatrix != oilMatrix || o.distance != distance;
-}
+    def reset_captures(self):
+        self.capture_state.reset()
+        self.engine.reset()
+        self.processed = False
+
+        try:
+            self.engine.captures.clear()
+            self.engine.fused_depth = None
+            self.engine.face_metrics = None
+            self.engine.skin_tone = None
+        except Exception:
+            pass
+
+        self.gui.update_captures(self.capture_state.captured)
+        self.gui.update_status("Captures reset", TEXT_COLOR)
+        self._set_default_instructions()
+        self.gui.set_step_overlays({})
+
+    # ---------------------------------------------------------------------
+    # Processing + rendering
+    # ---------------------------------------------------------------------
+
+    def process_captures(self):
+        if not self.capture_state.all_captured:
+            self.gui.show_message("Warning", "Capture all 3 views first", "warning")
+            return
+
+        self.gui.update_status("Processing...", WARNING_COLOR)
+
+        try:
+            ok = self.engine.process_captures()
+            if not ok:
+                self.gui.show_message("Error", "Processing failed", "error")
+                self.gui.update_status("Processing failed", WARNING_COLOR)
+                return
+
+            self.processed = True
+
+            # Update analysis
+            metrics = self.engine.face_metrics
+            if metrics:
+                shape_weights = {
+                    "round": metrics.shape_round,
+                    "oval": metrics.shape_oval,
+                    "square": metrics.shape_square,
+                    "heart": metrics.shape_heart,
+                    "oblong": metrics.shape_oblong,
+                }
+                feature_scores = {
+                    "cheekbone_prominence": metrics.cheekbone_prominence,
+                    "jaw_sharpness": metrics.jaw_sharpness,
+                    "eye_roundness": metrics.eye_roundness,
+                    "brow_arch": metrics.brow_arch,
+                    "lip_fullness": metrics.lip_fullness,
+                    "forehead_height_score": metrics.forehead_height_score,
+                }
+                ratios = {
+                    "face_width_ratio": metrics.face_width_ratio,
+                    "jaw_width_ratio": metrics.jaw_width_ratio,
+                    "forehead_ratio": metrics.forehead_ratio,
+                    "eye_distance_ratio": metrics.eye_distance_ratio,
+                    "nose_length_ratio": metrics.nose_length_ratio,
+                    "lip_width_ratio": metrics.lip_width_ratio,
+                }
+                self.gui.update_analysis(shape_weights, feature_scores, ratios)
+
+            skin = self.engine.skin_tone
+            if skin:
+                palette = self.engine.get_color_palette()
+                concealer_color = palette.get("concealer", (200, 180, 160))
+                self.gui.update_skin(skin.undertone, skin.depth, concealer_color)
+                self.gui.update_palette(palette)
+
+            if metrics and skin:
+                instructions = generate_instructions(metrics, self.engine.current_style, skin)
+                self.gui.set_instructions(instructions)
+
+            self.gui.update_celebrities(self.engine.get_celebrity_matches())
+
+            self._regen_step_overlays()
+
+            self.gui.update_status("Processing complete!", SUCCESS_COLOR)
+        except Exception as e:
+            self.gui.show_message("Error", f"Processing error: {str(e)}", "error")
+            self.gui.update_status("Processing failed", WARNING_COLOR)
+
+    def _compute_masks_colors_for_view(self, idx: int) -> Tuple[np.ndarray, Dict[str, np.ndarray], Dict[str, Tuple[int, int, int]]]:
+        """Compute projected + aggregated masks and a compatible color dict for capture idx."""
+        cap = self.engine.captures[idx]
+        frame = cap.original_bgr.copy()
+
+        masks_face = self.engine.generate_masks(cap.pts_pixel, cap.axes)
+        masks_img_detail = self.engine.project_masks_to_image(masks_face, cap.axes, frame.shape[:2])
+        masks = self.engine.aggregate_masks(masks_img_detail)
+
+        palette = self.engine.get_color_palette()
+        colors = dict(palette)
+        # map eyeshadow -> base shade
+        if "eyeshadow" not in colors:
+            colors["eyeshadow"] = colors.get("eyeshadow_base", (160, 130, 160))
+        # simple gloss color if missing
+        if "lip_gloss" not in colors:
+            lip = np.array(colors.get("lip", (180, 80, 80)), dtype=np.float32)
+            gloss = tuple(np.clip(lip * 0.6 + 255 * 0.4, 0, 255).astype(np.uint8).tolist())
+            colors["lip_gloss"] = gloss
+
+        return frame, masks, colors
+
+    def _regen_step_overlays(self):
+        if not self.processed or len(self.engine.captures) < 2:
+            return
+
+        # Build previews for each of the 3 captures (L/C/R)
+        view_map = {"L": 0, "C": 1, "R": 2}
+
+        # Cache per-view computed masks/colors once
+        per_view: Dict[str, Tuple[np.ndarray, Dict[str, np.ndarray], Dict[str, Tuple[int, int, int]]]] = {}
+        for v, i in view_map.items():
+            if i >= len(self.engine.captures) or self.engine.captures[i] is None:
+                continue
+            per_view[v] = self._compute_masks_colors_for_view(i)
+
+        step_images: Dict[str, Dict[str, np.ndarray]] = {}
+
+        # All
+        step_images["All"] = {}
+        for v, (frame, masks, colors) in per_view.items():
+            step_images["All"][v] = self.engine.apply_makeup(frame.copy(), masks, colors)
+
+        # Each step
+        for step in STEP_NAMES:
+            if step == "All":
+                continue
+            step_images[step] = {}
+            prods = STEP_TO_PRODUCTS.get(step, [])
+            for v, (frame, masks, colors) in per_view.items():
+                step_masks = {k: masks[k] for k in prods if k in masks}
+                if not step_masks:
+                    step_images[step][v] = frame.copy()
+                else:
+                    step_images[step][v] = self.engine.apply_makeup(frame.copy(), step_masks, colors)
+
+        self.gui.set_step_overlays(step_images)
+
+    # ---------------------------------------------------------------------
+    # Style controls
+    # ---------------------------------------------------------------------
+
+    def change_style(self, style_name: str):
+        self.engine.set_style(style_name)
+        if not self.processed:
+            return
+
+        metrics = self.engine.face_metrics
+        skin = self.engine.skin_tone
+        if metrics and skin:
+            self.gui.set_instructions(generate_instructions(metrics, self.engine.current_style, skin))
+
+        self._regen_step_overlays()
+
+    def select_celebrity(self, celebrity_name: str):
+        self.engine.set_celebrity(celebrity_name)
+
+        if self.processed:
+            self._regen_step_overlays()
+
+        celeb = self.engine.current_celebrity
+        if celeb:
+            self.gui.show_message("Style Applied", f"Applied {celeb.name}'s makeup style")
+
+    # ---------------------------------------------------------------------
+    # Export
+    # ---------------------------------------------------------------------
+
+    def export_image(self):
+        if not self.processed:
+            self.gui.show_message("Warning", "Process captures first", "warning")
+            return
+
+        filepath = self.gui.ask_save_file(
+            "Save Image",
+            [("PNG files", "*.png"), ("JPEG files", "*.jpg")],
+            ".png",
+        )
+        if not filepath:
+            return
+
+        frame, masks, colors = self._compute_masks_colors_for_view(1)
+        out = self.engine.apply_makeup(frame, masks, colors)
+        cv2.imwrite(filepath, out)
+        self.gui.show_message("Success", f"Image saved to {filepath}")
+
+    def export_guide(self):
+        if not self.processed:
+            self.gui.show_message("Warning", "Process captures first", "warning")
+            return
+
+        filepath = self.gui.ask_save_file(
+            "Save Guide",
+            [("JSON files", "*.json"), ("Text files", "*.txt")],
+            ".json",
+        )
+        if not filepath:
+            return
+
+        metrics = self.engine.face_metrics
+        skin = self.engine.skin_tone
+        if not metrics or not skin:
+            self.gui.show_message("Error", "Missing face metrics/skin tone", "error")
+            return
+
+        instructions = generate_instructions(metrics, self.engine.current_style, skin)
+
+        guide = {
+            "style": self.engine.current_style.name,
+            "skin_tone": {"undertone": skin.undertone, "depth": skin.depth},
+            "face_shape": {
+                "round": metrics.shape_round,
+                "oval": metrics.shape_oval,
+                "square": metrics.shape_square,
+                "heart": metrics.shape_heart,
+                "oblong": metrics.shape_oblong,
+            },
+            "instructions": instructions,
+            "colors": {k: list(v) for k, v in self.engine.get_color_palette().items()},
+        }
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(guide, f, indent=2)
+
+        self.gui.show_message("Success", f"Guide saved to {filepath}")
+
+    # ---------------------------------------------------------------------
+    # Main
+    # ---------------------------------------------------------------------
+
+    def run(self):
+        try:
+            self.gui.run()
+        finally:
+            self.stop_camera()
+            self.engine.close()
+
+
+def main():
+    app = MakeupApp()
+    app.run()
+
+
+if __name__ == "__main__":
+    main()
