@@ -155,7 +155,7 @@ class OilMapPainter extends CustomPainter {
 
   Color _oilColor(double v) {
     const stops = [
-      [0.0, Color(0xFF32140A)],
+      [0.0,  Color(0xFF32140A)],
       [0.12, Color(0xFF8B4513)],
       [0.28, Color(0xFFC0392B)],
       [0.42, Color(0xFFE67E22)],
@@ -171,9 +171,9 @@ class OilMapPainter extends CustomPainter {
         final a = stops[i-1][1] as Color;
         final b = stops[i][1] as Color;
         return Color.fromRGBO(
-          (a.red + (b.red - a.red) * t).round(),
+          (a.red   + (b.red   - a.red)   * t).round(),
           (a.green + (b.green - a.green) * t).round(),
-          (a.blue + (b.blue - a.blue) * t).round(), 1);
+          (a.blue  + (b.blue  - a.blue)  * t).round(), 1);
       }
     }
     return const Color(0xFF8E44AD);
@@ -181,15 +181,17 @@ class OilMapPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final dist = distance.toInt();
-    final bw = size.width / BOARDS;
-    final fh = size.height / dist;
+    final int dist = distance.toInt();
+    final double bw = size.width / BOARDS;
+    final double fh = size.height / dist; // height / dist — same as HTML
 
+    // Background
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..color = const Color(0xFF222222));
+      Paint()..color = const Color(0xFF111111));
 
     if (oilMatrix.isEmpty) return;
 
+    // Oil cells — pins at top, foul line at bottom
     for (int f = 0; f < dist; f++) {
       for (int b = 0; b < BOARDS && b < oilMatrix.length; b++) {
         final v = oilMatrix[b][f];
@@ -202,13 +204,24 @@ class OilMapPainter extends CustomPainter {
       }
     }
 
+    // Ft gridlines + labels every 5ft
     for (int f = 0; f < dist; f += 5) {
-      canvas.drawLine(Offset(0, (dist - f) * fh), Offset(size.width, (dist - f) * fh),
-        Paint()..color = Colors.white.withOpacity(0.12)..strokeWidth = 0.5);
-      _drawText(canvas, '${f}ft', Offset(2, (dist - f) * fh - 10), 9, Colors.white.withOpacity(0.55));
+      final y = (dist - f) * fh;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y),
+        Paint()..color = Colors.white.withOpacity(0.18)..strokeWidth = 0.5);
+      _drawText(canvas, '${f}ft', Offset(2, y - 10), 9, Colors.white.withOpacity(0.6));
     }
 
-    _drawText(canvas, name, Offset(size.width / 2 - name.length * 3, 4), 11, Colors.white.withOpacity(0.8));
+    // Board numbers every 5 across bottom
+    for (int b = 4; b < BOARDS; b += 5) {
+      _drawText(canvas, '${b+1}',
+        Offset(b * bw + 1, size.height - 11), 8, Colors.white.withOpacity(0.45));
+    }
+
+    // Pattern name
+    _drawText(canvas, name,
+      Offset(size.width / 2 - name.length * 3.0, 3),
+      10, Colors.white.withOpacity(0.75));
   }
 
   void _drawText(Canvas canvas, String text, Offset offset, double size, Color color) {
@@ -220,7 +233,8 @@ class OilMapPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(OilMapPainter old) => old.oilMatrix != oilMatrix;
+  bool shouldRepaint(OilMapPainter old) =>
+    old.oilMatrix != oilMatrix || old.distance != distance || old.name != name;
 }
 
 class CrossSectionPainter extends CustomPainter {
