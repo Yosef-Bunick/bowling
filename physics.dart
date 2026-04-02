@@ -76,27 +76,31 @@ class BallSpecs {
 }
 
 class BowlerInputs {
-  double speedMph; double revRPM; double angleDeg; int landBoard;
-  double axisTilt; double axisRotation; double hookK0;
-  double releaseBoard; bool useReleaseMode; double handedness;
+  double speedMph;
+  double revRPM;
+  double angleDeg;
+  double axisTilt;
+  double axisRotation;
+  double hookK0;
+  double releaseBoard;       // touchdown board
+  double landingDistanceFt;  // touchdown distance
+  bool useReleaseMode;
+  double handedness;
   BowlerInputs({
-    this.speedMph=19.0, this.revRPM=300.0, this.angleDeg=2.0,
-    this.landBoard=15, this.axisTilt=15.0, this.axisRotation=45.0,
-    this.hookK0=1.0, this.releaseBoard=17.0, this.useReleaseMode=true,
-    this.handedness=1.0,
+    this.speedMph = 19.0,
+    this.revRPM = 300.0,
+    this.angleDeg = 0.0,
+    this.axisTilt = 15.0,
+    this.axisRotation = 45.0,
+    this.hookK0 = 1.0,
+    this.releaseBoard = 17.0,
+    this.landingDistanceFt = 7.0,
+    this.useReleaseMode = true,
+    this.handedness = 1.0,
   });
-  double get computedLandBoard {
-    const double airFt = 7.0;
-    final double lateralBoards = airFt * tan(angleDeg*pi/180.0) * 12.0 / 1.0625;
-    return (releaseBoard + lateralBoards).clamp(1.0, 39.0);
-  }
-  double get computedAngleDeg {
-    const double airFt = 7.0;
-    final double lateralFt = (landBoard - releaseBoard) * 1.0625 / 12.0;
-    return atan2(lateralFt, airFt) * 180.0 / pi;
-  }
-  double get effectiveAngleDeg  => useReleaseMode ? angleDeg       : computedAngleDeg;
-  double get effectiveLandBoard => useReleaseMode ? computedLandBoard : landBoard.toDouble();
+  double get effectiveAngleDeg => angleDeg;
+  double get effectiveLandBoard => releaseBoard;
+  double get effectiveLandingDistanceFt => landingDistanceFt;
 }
 
 class LoadRow {
@@ -251,7 +255,6 @@ SimResult runSimulation(BowlerInputs inp, PatternData pat, BallSpecs ball, List<
   final double Ih     = I / bias;
   final double h      = inp.handedness;
 
-  final double landBoard = inp.effectiveLandBoard.clamp(1.0,39.0);
   final double angleRad  = inp.effectiveAngleDeg * pi / 180.0;
   final double speed     = inp.speedMph * 0.44704;
 
@@ -266,8 +269,8 @@ SimResult runSimulation(BowlerInputs inp, PatternData pat, BallSpecs ball, List<
   double omegaH = omega0 * sin(ar0) * cos(at0);
   double omegaT = omega0 * sin(at0);
 
-  double ft = 7.0;
-  double board = landBoard;
+  double ft = inp.effectiveLandingDistanceFt.clamp(0.5, 15.0);
+  double board = inp.effectiveLandBoard.clamp(1.0, 39.0);
   double theta = -pi/2.0;
   const double STEP_FT = 0.25;
   final double STEP_M = STEP_FT * 0.3048;
