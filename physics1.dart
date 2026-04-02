@@ -1,3 +1,4 @@
+//original version no buff
 import 'dart:math';
 
 // ═══════════════════════════════════════════════════════════
