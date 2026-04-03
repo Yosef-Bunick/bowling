@@ -85,10 +85,50 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
   }
 
   void _rebuild() {
+    // Full reset: fresh oil matrix, don't apply breakdown yet
+    animTimer?.cancel();
+    final freshOil = buildOilMatrix(pattern.fwdRows, pattern.revRows);
+    final simOil = _copyOil(freshOil);  // sim on copy
     setState(() {
-      oilMatrix  = buildOilMatrix(pattern.fwdRows, pattern.revRows);
-      simResult  = runSimulation(bowler, pattern, ball, oilMatrix);
-      animIdx = 0; playing = false; animTimer?.cancel();
+      oilMatrix = freshOil;
+      simResult = runSimulation(bowler, pattern, ball, simOil);
+      animIdx = 0; playing = false;
+    });
+
+  }
+
+  void _recalc() {
+    // Re-run on existing oil — breakdown persists
+    animTimer?.cancel();
+    setState(() {
+      simResult = runSimulation(bowler, pattern, ball, oilMatrix);
+      animIdx = 0; playing = true;
+    });
+    _startAnim();
+  }
+
+  List<List<double>> _copyOil(List<List<double>> src) {
+    return List.generate(src.length, (b) => List<double>.from(src[b]));
+  }
+
+  void _startAnim() {
+    animTimer = Timer.periodic(const Duration(milliseconds: 25), (t) {
+      if (!playing || simResult == null) { t.cancel(); return; }
+      setState(() {
+        animIdx += 2;
+        if (animIdx >= simResult!.path.length) {
+          animIdx = simResult!.path.length - 1;
+          playing = false;
+          t.cancel();
+        }
+      });
+    });
+  }
+
+  void _scheduleRecalc() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 180), () {
+      if (mounted) _recalc();
     });
   }
 
@@ -153,12 +193,12 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
       ),
     ),
     body: TabBarView(controller: _tabs, children: [
-      _BowlerTab(bowler: bowler, onChanged: (b) { bowler = b; _scheduleRebuild(); }),
-      _BallTab(ball: ball, onChanged: (b) { ball = b; _scheduleRebuild(); }),
+      _BowlerTab(bowler: bowler, onChanged: (b) { bowler = b; _scheduleRecalc(); }),
+      _BallTab(ball: ball, onChanged: (b) { ball = b; _scheduleRecalc(); }),
       _PatternTab(pattern: pattern, onChanged: (p) { pattern = p; _scheduleRebuild(); }),
       _LaneTab(simResult: simResult, oilMatrix: oilMatrix,
         animIdx: animIdx, playing: playing,
-        onPlay: _togglePlay, onReset: _reset, onRecalc: _rebuild),
+        onPlay: _togglePlay, onReset: _rebuild, onRecalc: _recalc),
       _OilMapTab(oilMatrix: oilMatrix, pattern: pattern),
     ]),
   );
@@ -818,26 +858,30 @@ class _3DOilPainter extends CustomPainter {
     if (oilMatrix.isEmpty) return;
 
     const int B = 39;
-    final dist = distance.toInt();
+    final int cols = oilMatrix[0].length;
+    final double res = cols > 65 ? 0.25 : 1.0;  // detect resolution
+    final int distCols = (distance / res).round();  // columns to render
+    
     final iX = size.width * 0.5, iY = size.height * 0.88;
     final sX = size.width / B * 0.52;
     final sY = size.height * 0.42, sZ = size.height * 0.42;
 
-    Offset proj(int b, int f, double v) {
+    Offset proj(int b, int col, double v) {
+      final ftPos = col * res;  // convert column to feet for projection
       final bx = (b - B / 2) * sX;
-      final fy = (dist - f) * sY / dist;
+      final fy = (distance - ftPos) * sY / distance;
       final oz = v * sZ;
       return Offset(iX + bx * 0.98 - fy * 0.42, iY - fy * 0.52 - oz + bx * 0.07);
     }
 
-    for (int f = 0; f < dist - 1 && f < oilMatrix[0].length - 1; f++) {
+    for (int col = 0; col < distCols - 1 && col < cols - 1; col++) {
       for (int b = 0; b < B - 1 && b < oilMatrix.length - 1; b++) {
-        final v = oilMatrix[b][f];
+        final v = oilMatrix[b][col];
         final p = Path()
-          ..moveTo(proj(b,   f,   v).dx,                      proj(b,   f,   v).dy)
-          ..lineTo(proj(b+1, f,   oilMatrix[b+1][f]).dx,      proj(b+1, f,   oilMatrix[b+1][f]).dy)
-          ..lineTo(proj(b+1, f+1, oilMatrix[b+1][f+1]).dx,    proj(b+1, f+1, oilMatrix[b+1][f+1]).dy)
-          ..lineTo(proj(b,   f+1, oilMatrix[b][f+1]).dx,      proj(b,   f+1, oilMatrix[b][f+1]).dy)
+          ..moveTo(proj(b,   col,   v).dx,                        proj(b,   col,   v).dy)
+          ..lineTo(proj(b+1, col,   oilMatrix[b+1][col]).dx,      proj(b+1, col,   oilMatrix[b+1][col]).dy)
+          ..lineTo(proj(b+1, col+1, oilMatrix[b+1][col+1]).dx,    proj(b+1, col+1, oilMatrix[b+1][col+1]).dy)
+          ..lineTo(proj(b,   col+1, oilMatrix[b][col+1]).dx,      proj(b,   col+1, oilMatrix[b][col+1]).dy)
           ..close();
         canvas.drawPath(p, Paint()..color = colorFn(v));
         canvas.drawPath(p, Paint()
