@@ -328,10 +328,10 @@ Use `TX_RISE` first.
 ```dart
 // ─── STRIBECK / FRICTION ─────────────────────────────
 const double STRIBECK_A = 0.0080; // Fluid resistance
-const double STRIBECK_B = 0.0450; // Oiled friction floor
+const double STRIBECK_B = 0.040; // Oiled friction floor
 const double STRIBECK_C = 0.0150; // Transition scaling
-const double STRIBECK_D = 10.0;   // Shape (10 = neutral)
-const double H_REF      = 1.5e-6; // Oil depth sensitivity
+const double STRIBECK_D = 15.0;   // Shape (10 = neutral)
+const double H_REF      = 2.2e-6; // Oil depth sensitivity
 
 // ─── OIL SUPPRESSION ─────────────────────────────────
 const double OIL_X_DROP = 0.40;   // When long. friction starts to die
@@ -347,7 +347,7 @@ const double TY_FALL = 5.0;
 
 // ─── PHASE THRESHOLDS ───────────────────────────────
 const double ROLL_SLIP_THRESH = 0.05; // Slightly tighter roll lock
-const double ROLL_TX_THRESH   = 0.45; 
+const double ROLL_TX_THRESH   = 0.60; 
 
 // ─── FRICTION BLENDING ──────────────────────────────
 const double MIN_LATERAL_TRACTION = 0.03; 
