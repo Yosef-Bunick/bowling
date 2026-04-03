@@ -11,7 +11,7 @@ no real life tests, if you have any input please contribute here especialy if yo
 | Mode           | OIL_PICKUP_RATE | OIL_DEPOSIT_RATE | OIL_CARRY_BLEND | Effect                                                     |
 | -------------- | --------------- | ---------------- | --------------- | ---------------------------------------------------------- |
 | **Slow**       | 0.020           | 0.012            | 0.25            | Minimal transition, lane stays stable longer               |
-| **Medium**     | 0.18            | 0.10             | 0.85            | Balanced, realistic breakdown                              |
+| **Medium**     | 0.18            | 0.10             | 0.85            | Balanced, realistic breakdown after full round             |
 | **Fast**       | 0.36            | 0.20             | 1.7             | Faster burn, noticeable carrydown                          |
 | **Aggressive** | 0.72            | 0.4              | 3.4             | Rapid transition, strong carrydown, backend gets sensitive |
 
