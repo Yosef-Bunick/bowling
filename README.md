@@ -324,7 +324,7 @@ Use `TX_RISE` first.
 * **Roll earlier/later** = mostly roll thresholds
 * **Roll stronger/weaker** = mostly `TX_RISE`
 
-# defaluts
+# defaults
 ```dart
 // ─── STRIBECK / FRICTION ─────────────────────────────
 const double STRIBECK_A = 0.0024;
