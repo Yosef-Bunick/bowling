@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'models/physics.dart';
 import 'painters/lane_painter.dart';
+import 'package:flutter/gestures.dart';
 
 void main() => runApp(const BowlingSimApp());
 
@@ -856,6 +857,10 @@ class _OilMapTab extends StatefulWidget {
 
 class _OilMapTabState extends State<_OilMapTab> {
   bool show3D = false;
+  double _yaw = -0.85;
+  double _pitch = 0.95;
+  double _zoom = 1.35;
+  double _lastScale = 1.0;
 
   // Shared rainbow color scale — same in both 2D and 3D
   static const List<List<dynamic>> _stops = [
@@ -890,6 +895,56 @@ class _OilMapTabState extends State<_OilMapTab> {
     return const Color(0xFF8E44AD);
   }
 
+  Widget _buildInteractive3D() {
+    return Listener(
+      onPointerSignal: (event) {
+        if (event is PointerScrollEvent) {
+          setState(() {
+            final next = _zoom * (event.scrollDelta.dy > 0 ? 0.92 : 1.08);
+            _zoom = next.clamp(0.7, 4.0);
+          });
+        }
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onDoubleTap: () {
+          setState(() {
+            _yaw = -0.85;
+            _pitch = 0.95;
+            _zoom = 1.35;
+          });
+        },
+        onScaleStart: (_) {
+          _lastScale = 1.0;
+        },
+        onScaleUpdate: (details) {
+          setState(() {
+            if (details.pointerCount >= 2) {
+              final scaleDelta = details.scale / _lastScale;
+              _zoom = (_zoom * scaleDelta).clamp(0.7, 4.0);
+              _lastScale = details.scale;
+            } else {
+              _yaw += details.focalPointDelta.dx * 0.01;
+              _pitch = (_pitch - details.focalPointDelta.dy * 0.01).clamp(0.35, 1.45);
+            }
+          });
+        },
+        child: CustomPaint(
+          painter: _3DOilPainter(
+            oilMatrix: widget.oilMatrix,
+            //distance: widget.pattern.distance, //short lane in 3d
+            distance: LANE_FT.toDouble(), //long lane in 3d
+            colorFn: oilColor,
+            yaw: _yaw,
+            pitch: _pitch,
+            zoom: _zoom,
+          ),
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Column(children: [
     // Header + toggle
@@ -916,12 +971,7 @@ class _OilMapTabState extends State<_OilMapTab> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: show3D
-          ? CustomPaint(
-              painter: _3DOilPainter(
-                oilMatrix: widget.oilMatrix,
-                distance: widget.pattern.distance,
-                colorFn: oilColor),
-              child: const SizedBox.expand())
+          ? _buildInteractive3D()
           : CustomPaint(
               painter: OilMapPainter(
                 oilMatrix: widget.oilMatrix,
@@ -997,54 +1047,127 @@ class _3DOilPainter extends CustomPainter {
   final List<List<double>> oilMatrix;
   final double distance;
   final Color Function(double) colorFn;
+  final double yaw;
+  final double pitch;
+  final double zoom;
+
   const _3DOilPainter({
     required this.oilMatrix,
     required this.distance,
     required this.colorFn,
+    required this.yaw,
+    required this.pitch,
+    required this.zoom,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Rect.fromLTWH(0,0,size.width,size.height),
-      Paint()..color = const Color(0xFF111111));
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()..color = const Color(0xFF111111),
+    );
     if (oilMatrix.isEmpty) return;
 
-    const int B = 39;
-    final int cols = oilMatrix[0].length;
-    final double res = cols > 65 ? 0.25 : 1.0;  // detect resolution
-    final int distCols = (distance / res).round();  // columns to render
-    
-    final iX = size.width * 0.5, iY = size.height * 0.88;
-    final sX = size.width / B * 0.52;
-    final sY = size.height * 0.42, sZ = size.height * 0.42;
+    const int boards = 39;
+    final int cols = oilMatrix.first.length;
+    final double res = cols > 65 ? 0.25 : 1.0;
+    final int distCols = (distance / res).round().clamp(1, cols);
 
-    Offset proj(int b, int col, double v) {
-      final ftPos = col * res;  // convert column to feet for projection
-      final bx = (b - B / 2) * sX;
-      final fy = (distance - ftPos) * sY / distance;
-      final oz = v * sZ;
-      return Offset(iX + bx * 0.98 - fy * 0.42, iY - fy * 0.52 - oz + bx * 0.07);
+    final double cx = size.width * 0.3;
+    final double cy = size.height * 0.76;
+
+    final double laneWidth = size.width * 0.25 * zoom;
+    final double laneDepth = size.height * 2.15 * zoom;
+    final double heightScale = size.height * 0.20 * zoom;
+
+    Offset project(double boardIdx, double colIdx, double v) {
+      final double x = ((boardIdx / (boards - 1)) - 0.5) * laneWidth;
+      final double y = ((colIdx * res) / distance - 0.5) * laneDepth;
+      final double z = v * heightScale;
+
+      final double cosy = cos(yaw);
+      final double siny = sin(yaw);
+      final double x1 = x * cosy - y * siny;
+      final double y1 = x * siny + y * cosy;
+
+      final double cosp = cos(pitch);
+      final double sinp = sin(pitch);
+      final double y2 = y1 * cosp;
+      final double z2 = z + y1 * sinp;
+
+      final double cam = 900.0;
+      final double depth = cam + y2 + laneDepth * 0.65;
+      final double p = cam / depth.clamp(250.0, 2000.0);
+
+      final double sx = cx + x1 * p;
+      final double sy = cy + y2 * 0.18 * p - z2 * p;
+
+      return Offset(sx, sy);
     }
 
-    for (int col = 0; col < distCols - 1 && col < cols - 1; col++) {
-      for (int b = 0; b < B - 1 && b < oilMatrix.length - 1; b++) {
-        final v = oilMatrix[b][col];
-        final p = Path()
-          ..moveTo(proj(b,   col,   v).dx,                        proj(b,   col,   v).dy)
-          ..lineTo(proj(b+1, col,   oilMatrix[b+1][col]).dx,      proj(b+1, col,   oilMatrix[b+1][col]).dy)
-          ..lineTo(proj(b+1, col+1, oilMatrix[b+1][col+1]).dx,    proj(b+1, col+1, oilMatrix[b+1][col+1]).dy)
-          ..lineTo(proj(b,   col+1, oilMatrix[b][col+1]).dx,      proj(b,   col+1, oilMatrix[b][col+1]).dy)
+    final List<_CellFace> faces = [];
+
+    for (int col = 0; col < distCols - 1; col++) {
+      for (int b = 0; b < boards - 1; b++) {
+        final double v00 = oilMatrix[b][col];
+        final double v10 = oilMatrix[b + 1][col];
+        final double v11 = oilMatrix[b + 1][col + 1];
+        final double v01 = oilMatrix[b][col + 1];
+
+        final p0 = project(b.toDouble(), col.toDouble(), v00);
+        final p1 = project((b + 1).toDouble(), col.toDouble(), v10);
+        final p2 = project((b + 1).toDouble(), (col + 1).toDouble(), v11);
+        final p3 = project(b.toDouble(), (col + 1).toDouble(), v01);
+
+        final path = Path()
+          ..moveTo(p0.dx, p0.dy)
+          ..lineTo(p1.dx, p1.dy)
+          ..lineTo(p2.dx, p2.dy)
+          ..lineTo(p3.dx, p3.dy)
           ..close();
-        canvas.drawPath(p, Paint()..color = colorFn(v));
-        canvas.drawPath(p, Paint()
-          ..color = Colors.black.withOpacity(0.10)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 0.25);
+
+        final avgDepth = (col + col + 1) * 0.5;
+        final avgOil = (v00 + v10 + v11 + v01) / 4.0;
+
+        faces.add(_CellFace(
+          path: path,
+          depth: avgDepth,
+          color: colorFn(avgOil),
+        ));
       }
+    }
+
+    faces.sort((a, b) => a.depth.compareTo(b.depth));
+
+    for (final face in faces) {
+      canvas.drawPath(face.path, Paint()..color = face.color);
+      canvas.drawPath(
+        face.path,
+        Paint()
+          ..color = Colors.black.withOpacity(0.12)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 0.35,
+      );
     }
   }
 
   @override
-  bool shouldRepaint(_3DOilPainter o) =>
-    o.oilMatrix != oilMatrix || o.distance != distance;
+  bool shouldRepaint(_3DOilPainter old) =>
+      old.oilMatrix != oilMatrix ||
+      old.distance != distance ||
+      old.yaw != yaw ||
+      old.pitch != pitch ||
+      old.zoom != zoom;
+}
+
+class _CellFace {
+  final Path path;
+  final double depth;
+  final Color color;
+
+  _CellFace({
+    required this.path,
+    required this.depth,
+    required this.color,
+  });
 }
