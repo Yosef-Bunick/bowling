@@ -327,30 +327,31 @@ Use `TX_RISE` first.
 # defaults
 ```dart
 // ─── STRIBECK / FRICTION ─────────────────────────────
-const double STRIBECK_A = 0.0024;
-const double STRIBECK_B = 0.010;
-const double STRIBECK_C = 0.005;
-const double STRIBECK_D = 12.0;
-const double H_REF = 2.0e-6;
+const double STRIBECK_A = 0.0080; // Fluid resistance
+const double STRIBECK_B = 0.0450; // Oiled friction floor
+const double STRIBECK_C = 0.0150; // Transition scaling
+const double STRIBECK_D = 10.0;   // Shape (10 = neutral)
+const double H_REF      = 1.5e-6; // Oil depth sensitivity
 
 // ─── OIL SUPPRESSION ─────────────────────────────────
-const double OIL_X_DROP = 0.35;
-const double OIL_Y_DROP = 0.75;
-const double OIL_X_EXP  = 1.10;
-const double OIL_Y_EXP  = 1.25;
+const double OIL_X_DROP = 0.40;   // When long. friction starts to die
+const double OIL_Y_DROP = 0.80;   // When lat. friction starts to die
+const double OIL_X_EXP  = 1.15;   
+const double OIL_Y_EXP  = 1.30;   
 
 // ─── TRACTION RESPONSE ───────────────────────────────
-const double TX_RISE = 2.6;
-const double TX_FALL = 7.0;
-const double TY_RISE = 1.2;
-const double TY_FALL = 6.5;
+const double TX_RISE = 3.5;       // Faster longitudinal grab
+const double TX_FALL = 6.0;       
+const double TY_RISE = 2.0;       // Stronger lateral "turn"
+const double TY_FALL = 5.0;       
 
 // ─── PHASE THRESHOLDS ───────────────────────────────
-const double ROLL_SLIP_THRESH = 0.060;
-const double ROLL_TX_THRESH   = 0.50;
+const double ROLL_SLIP_THRESH = 0.05; // Slightly tighter roll lock
+const double ROLL_TX_THRESH   = 0.45; 
 
 // ─── FRICTION BLENDING ──────────────────────────────
-const double MIN_LATERAL_TRACTION = 0.02;
+const double MIN_LATERAL_TRACTION = 0.03; 
+
 
 ---
 
