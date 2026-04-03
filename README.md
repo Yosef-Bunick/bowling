@@ -1,11 +1,12 @@
 # Bowling
 
-Real Physics Bowling Simulation, simulates ball movement on a complex bowling oil pattern based on actual physics.
+Real Physics Bowling Simulation. It simulates ball movement on a complex bowling pattern based on actual physics.
 
-Feel free to contribute to this code. It is quite thorough already, but still needs a few tweaks.
+Feel free to contribute to this code. It is already fairly thorough, but still needs a few tweaks.
 
-# Setup
+## Setup
 
+```text
 fileholder/
 └── lib/
     ├── main.dart
