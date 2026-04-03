@@ -4,8 +4,7 @@ Real Physics Bowling Simulation, simulates ball on real complex bowling pattern 
 feel free to contribute to this code, its quite thurough just needs a few tweaks
 
 # known errors
-cant push someone all the way to their left
-brush isnt having any effect yet. 
+no real life tests, if you have any input please contribute here especialy if you are experienced.
 
 ## Lane Breakdown Settings
 
