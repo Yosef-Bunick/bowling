@@ -324,6 +324,34 @@ Use `TX_RISE` first.
 * **Roll earlier/later** = mostly roll thresholds
 * **Roll stronger/weaker** = mostly `TX_RISE`
 
+# defaluts
+```dart
+// ─── STRIBECK / FRICTION ─────────────────────────────
+const double STRIBECK_A = 0.0024;
+const double STRIBECK_B = 0.010;
+const double STRIBECK_C = 0.005;
+const double STRIBECK_D = 12.0;
+const double H_REF = 2.0e-6;
+
+// ─── OIL SUPPRESSION ─────────────────────────────────
+const double OIL_X_DROP = 0.35;
+const double OIL_Y_DROP = 0.75;
+const double OIL_X_EXP  = 1.10;
+const double OIL_Y_EXP  = 1.25;
+
+// ─── TRACTION RESPONSE ───────────────────────────────
+const double TX_RISE = 2.6;
+const double TX_FALL = 7.0;
+const double TY_RISE = 1.2;
+const double TY_FALL = 6.5;
+
+// ─── PHASE THRESHOLDS ───────────────────────────────
+const double ROLL_SLIP_THRESH = 0.060;
+const double ROLL_TX_THRESH   = 0.50;
+
+// ─── FRICTION BLENDING ──────────────────────────────
+const double MIN_LATERAL_TRACTION = 0.02;
+
 ---
 
 
