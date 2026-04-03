@@ -1,27 +1,41 @@
-# bowling
-Real Physics Bowling Simulation, simulates ball on real complex bowling pattern based on actual physics. 
+# Bowling
 
-feel free to contribute to this code, its quite thurough just needs a few tweaks
+Real Physics Bowling Simulation, simulates ball movement on a complex bowling oil pattern based on actual physics.
 
-# setup
+Feel free to contribute to this code. It is quite thorough already, but still needs a few tweaks.
+
+# Setup
+
 fileholder/
- └── lib/
-      ├── main.dart
-      ├── models/
-      │     └── physics.dart
-      └── painters/
-            └── lane_painter.dart
+└── lib/
+    ├── main.dart
+    ├── models/
+    │   └── physics.dart
+    └── painters/
+        └── lane_painter.dart
+
 cd fileholder
 flutter create .
 
-# startup
+# Startup
+
 cd fileholder
 flutter run
-(alternatively > flutter run --windows or --linux or --ios or --android or--macos or--web)
 
-# known errors
-no real life tests, if you have any input please contribute here especialy if you are experienced in specific bowling patterns.
-model tweaks are as follows. 
+# Alternatively:
+
+flutter run --windows
+flutter run --linux
+flutter run --ios
+flutter run --android
+flutter run --macos
+flutter run --web
+
+# Known errors
+
+No real-life tests yet. If you have input, please contribute here, especially if you have experience with specific bowling patterns.
+
+Model tweaks are as follows.
 
 ## Lane Breakdown Settings
 
