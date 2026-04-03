@@ -1,0 +1,75 @@
+Here’s a compact scorecard for the math in your current model, based on **“10 = strongly physics-grounded”** and **“1 = basically a game hack.”** The formulas and structure come from your current `physics.dart`. 
+
+| Part                             | Current math / idea                                     | Physics score /10 | Verdict                                   |
+| -------------------------------- | ------------------------------------------------------- | ----------------: | ----------------------------------------- |
+| Geometry constants               | (g), ball radius, board width, SI conversion            |             **9** | Solid                                     |
+| MOI from RG                      | (I = m,RG^2)                                            |             **8** | Good approximation                        |
+| Grit → dry friction table        | surface mapped to fixed (\mu_{dry}) values              |             **5** | Useful, but empirical                     |
+| Hook bias from RG/diff/asy       | scalar boost to hook response                           |             **3** | Control hack, not real rigid-body physics |
+| Oil pattern builder              | forward/reverse pass + decay tails                      |             **6** | Good machine-inspired model               |
+| Oil normalization                | (oil = raw / \max(raw))                                 |             **3** | Good for visuals, weak physically         |
+| Oil grid resolution              | 0.25 ft cells, 260 columns                              |             **9** | Strong improvement                        |
+| Oil sampling                     | bilinear interpolation in board/ft                      |             **9** | Correct approach                          |
+| Pickup/deposit writeback         | nearest-cell add/subtract                               |             **4** | Coarse approximation                      |
+| Initial forward speed            | (v_x = v\cos\theta)                                     |             **8** | Fine                                      |
+| Initial lateral speed            | (v_y = 0.20,v\sin\theta)                                |             **2** | Big fudge factor                          |
+| Initial rev split                | (\omega_F,\omega_H,\omega_T) from axis rotation/tilt    |             **6** | Reasonable first-order model              |
+| Slip calculation                 | (slip_x = v_x - R\omega_F), (slip_y = v_y + hR\omega_H) |             **8** | Good                                      |
+| Slip ratio                       | (slipMag / v_x)                                         |             **6** | Works, but imperfect denominator          |
+| Flare exposure formula           | diff + asym + rpm + tilt suppression                    |             **4** | Plausible effect model, not proven        |
+| Dry friction ceilings            | (\mu_{K,dry}, \mu_{S,dry}) boosted by flare             |             **5** | Empirical but usable                      |
+| Oil-to-friction law              | (\mu \sim (1-oil)^p)                                    |             **4** | Works, but not regime-based tribology     |
+| Slip readiness blend             | map slip ratio to grip readiness                        |             **7** | Good sim logic                            |
+| Oil grip suppression             | (1-d,oil^p)                                             |             **6** | Reasonable sim logic                      |
+| Target traction                  | slip blend × oil grip                                   |             **7** | Good design                               |
+| Traction memory                  | exponential approach to target                          |             **7** | Good dynamic smoothing                    |
+| Effective friction blend         | (\mu_X=(1-T_x)\mu_K+T_x\mu_S), same for (Y)             |             **6** | Useful, somewhat layered/empirical        |
+| Lateral traction floor           | minimum lateral bite term                               |             **5** | Practical hack                            |
+| Friction force law               | (F = -\mu F_N \hat u)                                   |             **8** | Standard approximation                    |
+| Translational update             | (v \leftarrow v + (F/m)dt)                              |             **9** | Correct                                   |
+| Rotational torque update         | (\alpha = RF/I) style update                            |             **7** | Reasonable                                |
+| Different inertias via hook bias | (I_h = I/bias)                                          |             **3** | Tuning hack                               |
+| Spin clamps                      | clamp (\omega_F,\omega_H) to ranges                     |             **2** | Stability hack, hides bad physics         |
+| Tilt decay                       | manual exponential decay tied to traction               |             **3** | Empirical                                 |
+| Gutter model                     | damping rules in gutter                                 |             **4** | Gameplay fallback                         |
+| Lane transition pickup formula   | oil × flare × traction-based pickup                     |             **5** | Structurally okay, not calibrated         |
+| Lane transition deposit formula  | carried oil × carry blend                               |             **4** | Simplified                                |
+| Ball-oil state                   | scalar ballOil reservoir                                |             **5** | Useful abstraction                        |
+| Skid/hook/roll phase labels      | threshold rules on slip + traction                      |             **6** | Good classification, not deep physics     |
+| Breakpoint detector              | oil drop + traction + ft thresholds                     |             **5** | Display heuristic                         |
+
+## Overall averages
+
+| Category                       | Score /10 |
+| ------------------------------ | --------: |
+| Core mechanics framework       |   **7.5** |
+| Bowling-specific control logic |   **6.5** |
+| Oil / lane transition realism  |   **4.5** |
+| Rev / axis realism             |   **4.5** |
+| Launch / motion realism        |   **4.0** |
+| Full physical fidelity overall |   **5.5** |
+
+## Biggest strengths
+
+* Geometry and units are mostly solid. 
+* Oil sampling and quarter-foot grid are good now. 
+* Separate forward/lateral slip and traction is a smart bowling-specific design. 
+* Newtonian update structure is fine. 
+
+## Biggest weaknesses
+
+* `vy = 0.20 * speed * sin(angle)` is one of the least physical parts. 
+* Friction is driven mostly by oil amount, not true lubrication regime. 
+* Spin clamps and inertia bias are covering up deeper rev-dynamics issues. 
+* Oil normalization makes the pattern shape good but weakens physical meaning. 
+* Your current pickup/deposit constants are extreme, so lane transition is not physically calibrated. 
+
+## If I had to rank the top 5 things to fix first
+
+1. Initial lateral velocity term
+2. Friction law
+3. Spin / torque update and clamps
+4. Oil normalization / absolute scaling
+5. Pickup/deposit footprint and calibration
+
+If you want, I can turn this into a cleaner README-style table with “keep / revise / replace” columns too.
