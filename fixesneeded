@@ -7,12 +7,12 @@ Here’s a compact scorecard for the math in your current model, based on **“1
 | Grit → dry friction table        | surface mapped to fixed (\mu_{dry}) values              |             **5** | Useful, but empirical                     |
 | Hook bias from RG/diff/asy       | scalar boost to hook response                           |             **3** | Control hack, not real rigid-body physics |
 | Oil pattern builder              | forward/reverse pass + decay tails                      |             **6** | Good machine-inspired model               |
-| Oil normalization                | (oil = raw / \max(raw))                                 |             **3** | Good for visuals, weak physically         |
+| Oil normalization                | (oil = raw / \max(raw))                                 |**no change done3**| Good for visuals, weak physically         |
 | Oil grid resolution              | 0.25 ft cells, 260 columns                              |             **9** | Strong improvement                        |
 | Oil sampling                     | bilinear interpolation in board/ft                      |             **9** | Correct approach                          |
 | Pickup/deposit writeback         | nearest-cell add/subtract                               |             **4** | Coarse approximation                      |
 | Initial forward speed            | (v_x = v\cos\theta)                                     |             **8** | Fine                                      |
-| Initial lateral speed            | (v_y = 0.20,v\sin\theta)                                |             **2** | Big fudge factor                          |
+| Initial lateral speed            | (v_y = 0.20,v\sin\theta)                                |      **2changed** | Big fudge factor                          |
 | Initial rev split                | (\omega_F,\omega_H,\omega_T) from axis rotation/tilt    |             **6** | Reasonable first-order model              |
 | Slip calculation                 | (slip_x = v_x - R\omega_F), (slip_y = v_y + hR\omega_H) |             **8** | Good                                      |
 | Slip ratio                       | (slipMag / v_x)                                         |             **6** | Works, but imperfect denominator          |
@@ -29,7 +29,7 @@ Here’s a compact scorecard for the math in your current model, based on **“1
 | Translational update             | (v \leftarrow v + (F/m)dt)                              |             **9** | Correct                                   |
 | Rotational torque update         | (\alpha = RF/I) style update                            |             **7** | Reasonable                                |
 | Different inertias via hook bias | (I_h = I/bias)                                          |             **3** | Tuning hack                               |
-| Spin clamps                      | clamp (\omega_F,\omega_H) to ranges                     |             **2** | Stability hack, hides bad physics         |
+| Spin clamps                      | clamp (\omega_F,\omega_H) to ranges                     |      **2changed** | Stability hack, hides bad physics         |
 | Tilt decay                       | manual exponential decay tied to traction               |             **3** | Empirical                                 |
 | Gutter model                     | damping rules in gutter                                 |             **4** | Gameplay fallback                         |
 | Lane transition pickup formula   | oil × flare × traction-based pickup                     |             **5** | Structurally okay, not calibrated         |
