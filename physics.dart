@@ -16,6 +16,8 @@ const double BALL_R_M = 0.358 * 0.3048;
 const double BOARD_M  = (1.0625 / 12.0) * 0.3048;
 const int    BOARDS   = 39;
 const int    LANE_FT  = 65;
+const double OIL_RES  = 0.25;  // oil grid resolution in feet
+const int    OIL_COLS = 260;   // LANE_FT / OIL_RES
 const double MU_OIL_MIN  = 0.020;
 const double MU_ROLL_RES = 0.005;
 const double RG_REF_IN   = 2.53;
@@ -53,9 +55,9 @@ const double TY_FALL = 6.5;
 const double MIN_LATERAL_TRACTION = 0.05;
 
 // Oil transfer / carrydown approximation
-const double OIL_PICKUP_RATE  = 0.030;
-const double OIL_DEPOSIT_RATE = 0.018;
-const double OIL_CARRY_BLEND  = 0.35;
+const double OIL_PICKUP_RATE  = 2.88;
+const double OIL_DEPOSIT_RATE = 1.6;
+const double OIL_CARRY_BLEND  = 13.6;
 
 // Fresh-cover / flare exposure approximation
 const double FLARE_DIFF_GAIN = 0.90;
@@ -179,7 +181,7 @@ List<List<double>> buildOilMatrix(
   double eta = 0.45,     // fraction of old saturation retained
   double lambda = 0.75,  // how much active row loads the brush
 }) {
-  final raw = List.generate(BOARDS, (_) => List<double>.filled(LANE_FT, 0.0));
+  final raw = List.generate(BOARDS, (_) => List<double>.filled(OIL_COLS, 0.0));
 
   // Forward pass: tail goes DOWNLANE (toward pins)
   // Returns final brush saturation for reverse inheritance
@@ -190,8 +192,8 @@ List<List<double>> buildOilMatrix(
       if (row.toil == 0 || row.loads == 0) continue;
 
       // sl/sr are boards from edge — convert to 0-indexed board range
-      final bStart = row.sl;  // skip this many from left edge
-      final bEnd = BOARDS - 1 - row.sr;  // skip this many from right edge
+      final bStart = row.sl;
+      final bEnd = BOARDS - 1 - row.sr;
       if (bStart > bEnd) continue;
 
       final x0 = min(row.d0, row.d1);
@@ -212,8 +214,8 @@ List<List<double>> buildOilMatrix(
       final endSaturation = eta * saturation + lambda * baseAmount;
 
       for (int b = bStart; b <= bEnd; b++) {
-        for (int f = 0; f < LANE_FT; f++) {
-          final x = f.toDouble();
+        for (int col = 0; col < OIL_COLS; col++) {
+          final x = col * OIL_RES;  // convert column to feet
           double contribution = 0.0;
 
           if (x < x0) {
@@ -229,7 +231,7 @@ List<List<double>> buildOilMatrix(
             }
           }
 
-          raw[b][f] += contribution;
+          raw[b][col] += contribution;
         }
       }
 
@@ -270,8 +272,8 @@ List<List<double>> buildOilMatrix(
       final endSaturation = eta * saturation + lambda * baseAmount;
 
       for (int b = bStart; b <= bEnd; b++) {
-        for (int f = 0; f < LANE_FT; f++) {
-          final x = f.toDouble();
+        for (int col = 0; col < OIL_COLS; col++) {
+          final x = col * OIL_RES;  // convert column to feet
           double contribution = 0.0;
 
           if (x > xDrop) {
@@ -287,7 +289,7 @@ List<List<double>> buildOilMatrix(
             }
           }
 
-          raw[b][f] += contribution;
+          raw[b][col] += contribution;
         }
       }
 
@@ -301,26 +303,28 @@ List<List<double>> buildOilMatrix(
 
   double maxV = 0.0;
   for (int b = 0; b < BOARDS; b++) {
-    for (int f = 0; f < LANE_FT; f++) {
-      if (raw[b][f] > maxV) maxV = raw[b][f];
+    for (int col = 0; col < OIL_COLS; col++) {
+      if (raw[b][col] > maxV) maxV = raw[b][col];
     }
   }
 
   if (maxV == 0) return raw;
   return List.generate(
     BOARDS,
-    (b) => List.generate(LANE_FT, (f) => (raw[b][f] / maxV).clamp(0.0, 1.0)),
+    (b) => List.generate(OIL_COLS, (col) => (raw[b][col] / maxV).clamp(0.0, 1.0)),
   );
 }
 
 double oilAt2D(List<List<double>> oil, double board, double ft) {
   if (oil.isEmpty) return 0.0;
+  final int cols = oil[0].length;
+  final double res = cols > LANE_FT ? OIL_RES : 1.0;  // detect resolution
   final double bIdx = (board - 1.0).clamp(0.0, (BOARDS - 1).toDouble());
-  final double fIdx = ft.clamp(0.0, (LANE_FT - 1).toDouble());
+  final double fIdx = (ft / res).clamp(0.0, (cols - 1).toDouble());
   final int b0 = bIdx.floor().clamp(0, BOARDS - 1);
   final int b1 = (b0 + 1).clamp(0, BOARDS - 1);
-  final int f0 = fIdx.floor().clamp(0, LANE_FT - 1);
-  final int f1 = (f0 + 1).clamp(0, LANE_FT - 1);
+  final int f0 = fIdx.floor().clamp(0, cols - 1);
+  final int f1 = (f0 + 1).clamp(0, cols - 1);
   final double tb = bIdx - b0;
   final double tf = fIdx - f0;
   final double v00 = oil[b0][f0];
@@ -360,15 +364,17 @@ double flareExposure(BallSpecs ball, double omegaTot, double axisTiltDeg) {
 
 void depositOilAt2D(List<List<double>> oil, double board, double ft, double amount) {
   if (oil.isEmpty || amount <= 0) return;
+  final int cols = oil[0].length;
   final int b = (board - 1.0).round().clamp(0, BOARDS - 1);
-  final int f = ft.round().clamp(0, LANE_FT - 1);
+  final int f = (ft / OIL_RES).round().clamp(0, cols - 1);
   oil[b][f] = (oil[b][f] + amount).clamp(0.0, 1.0);
 }
 
 void pickupOilAt2D(List<List<double>> oil, double board, double ft, double amount) {
   if (oil.isEmpty || amount <= 0) return;
+  final int cols = oil[0].length;
   final int b = (board - 1.0).round().clamp(0, BOARDS - 1);
-  final int f = ft.round().clamp(0, LANE_FT - 1);
+  final int f = (ft / OIL_RES).round().clamp(0, cols - 1);
   oil[b][f] = (oil[b][f] - amount).clamp(0.0, 1.0);
 }
 
