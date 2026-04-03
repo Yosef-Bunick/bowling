@@ -51,18 +51,12 @@ No real-life tests yet. If you have input, please contribute here, especially if
 
 ---
 
-### Quick Guide
-
-* Increase **OIL_PICKUP_RATE** → fronts burn faster
-* Increase **OIL_DEPOSIT_RATE** → more oil moves downlane
-* Increase **OIL_CARRY_BLEND** → carrydown has stronger impact
-
 
 # tuning parameters
 
-## Bowling sim tuning guide
+## Bowling sim tuning guide (current physics)
 
-This is the clean priority order for changing **timing** and **strength** of **hook** and **roll**.
+This matches the **stateful traction + Stribeck/Hersey model**.
 
 The rule is simple:
 
@@ -78,32 +72,30 @@ Do **not** start with thresholds unless the earlier priorities are already close
 ## Earlier hook
 
 ```dart
-const double STRIBECK_A = 0.0024;
-// priority1 → change this first
-// gives friction something to build from
-// without enough base friction, the ball cannot read the lane early
-// use this first when hook is too late overall
-
 const double STRIBECK_B = 0.010;
-// priority2 → change this second
-// moves the transition earlier
-// this is the main hook timing control
+// priority1 → change this first
+// main hook timing control
 // lower B = friction ramps up sooner out of oil
 
-final double tractionY =
-    (1.35 /*priority3 → change this third
-             makes hook readiness build sooner
-             use this after A and B are close
-             higher = earlier recognition of friction zones */ *
-            (1.0 - hLocal.clamp(0.0, 1.0)) *
-            (1.0 - 0.75 * slipRatio.clamp(0.0, 1.0)))
-        .clamp(0.0, 1.0);
+const double STRIBECK_A = 0.0024;
+// priority2 → change this second
+// gives friction something to build from
+// without enough base friction, the ball cannot read early
 
-if (tractionY > 0.12) return 'hook';
-// priority4 → change this last
-// lowers the threshold required to enter hook phase
-// this is only the trigger, not the cause
-// use this only after the physics above are already close
+const double TY_RISE = 1.2;
+// priority3 → change this third
+// builds lateral traction faster
+// higher = earlier hook development
+
+const double OIL_Y_DROP = 0.75;
+// priority4 → change this fourth
+// reduces how much oil suppresses hook
+// lower = hook survives oil better
+
+// last resort
+tractionY > 0.18 → 0.16
+// lowers hook trigger threshold
+// only change after physics are correct
 ```
 
 ---
@@ -111,29 +103,24 @@ if (tractionY > 0.12) return 'hook';
 ## Later hook
 
 ```dart
-const double STRIBECK_A = 0.0015;
+const double STRIBECK_B = 0.010;
 // priority1 → change this first
-// lowers the friction available to start reading the lane
-// use this first when hook is happening too early overall
+// higher = friction ramps later
 
-const double STRIBECK_B = 0.020;
+const double STRIBECK_A = 0.0024;
 // priority2 → change this second
-// moves the transition later
-// this is the main hook timing delay control
-// higher B = friction ramps up later and smoother
+// lower = less early friction
 
-final double tractionY =
-    (1.00 /*priority3 → change this third
-             slows hook readiness buildup
-             lower = later recognition of friction zones */ *
-            (1.0 - hLocal.clamp(0.0, 1.0)) *
-            (1.0 - slipRatio.clamp(0.0, 1.0)))
-        .clamp(0.0, 1.0);
+const double TY_RISE = 1.2;
+// priority3 → change this third
+// lower = slower hook buildup
 
-if (tractionY > 0.18) return 'hook';
-// priority4 → change this last
-// raises the threshold required to enter hook phase
-// only use this after the earlier timing knobs are close
+const double OIL_Y_DROP = 0.75;
+// priority4 → change this fourth
+// higher = oil suppresses hook more
+
+// last resort
+tractionY > 0.18 → 0.21
 ```
 
 ---
@@ -141,21 +128,22 @@ if (tractionY > 0.18) return 'hook';
 ## Stronger hook
 
 ```dart
-tyScale = 1.10;
+const double TY_RISE = 1.2;
 // priority1 → change this first
-// directly increases sideways force during hook phase
-// this is the main hook strength knob
+// main hook strength knob in new system
+// higher = more lateral force buildup
 
-const double STRIBECK_A = 0.0026;
+const double OIL_Y_DROP = 0.75;
 // priority2 → change this second
-// raises friction available in transition and backend
-// supports stronger hook, but affects more than just hook phase
+// lower = hook survives oil better
 
-final double muBase =
-    muRaw.clamp(MU_ROLL_RES, muDryEff * 0.85);
+const double STRIBECK_A = 0.0024;
 // priority3 → change this third
-// raises the total friction ceiling
-// gives more total motion overall, including hook and roll
+// raises friction across transition
+
+muMax * 0.72 → 0.78
+// priority4 → change this fourth
+// raises total friction ceiling
 ```
 
 ---
@@ -163,20 +151,20 @@ final double muBase =
 ## Weaker hook
 
 ```dart
-tyScale = 0.70;
+const double TY_RISE = 1.2;
 // priority1 → change this first
-// directly reduces sideways force during hook phase
-// this is the cleanest way to soften hook
+// lower = weaker hook buildup
 
-const double STRIBECK_A = 0.0015;
+const double OIL_Y_DROP = 0.75;
 // priority2 → change this second
-// lowers friction available in transition and backend
+// higher = oil kills hook more
 
-final double muBase =
-    muRaw.clamp(MU_ROLL_RES, muDryEff * 0.70);
+const double STRIBECK_A = 0.0024;
 // priority3 → change this third
-// lowers the total friction ceiling
-// reduces overall motion
+// lowers friction availability
+
+muMax * 0.72 → 0.66
+// priority4 → change this fourth
 ```
 
 ---
@@ -184,20 +172,21 @@ final double muBase =
 ## Earlier roll
 
 ```dart
-if (slipRatio < 0.08 /*priority1 → change this first
-                        allows roll to happen sooner
-                        higher slip tolerance = earlier roll entry */ &&
-    tractionX > 0.42 /*priority2 → change this second
-                        makes roll easier to qualify for
-                        lower requirement = earlier roll */)
-  return 'roll';
+const double ROLL_SLIP_THRESH = 0.060;
+// priority1 → change this first
+// higher = roll happens sooner
 
-final double tractionX =
-    (1.10 /*priority3 → change this third
-             builds forward grip faster
-             helps the ball transition from hook to roll sooner */ *
-            (1.0 - (slipX.abs() / vx.clamp(0.3, 30.0))))
-        .clamp(0.0, 1.0);
+const double ROLL_TX_THRESH = 0.50;
+// priority2 → change this second
+// lower = easier to enter roll
+
+const double TX_RISE = 2.6;
+// priority3 → change this third
+// builds forward traction faster
+
+const double OIL_X_DROP = 0.35;
+// priority4 → change this fourth
+// lower = forward traction survives oil better
 ```
 
 ---
@@ -205,20 +194,21 @@ final double tractionX =
 ## Later roll
 
 ```dart
-if (slipRatio < 0.05 /*priority1 → change this first
-                        makes roll require less slip
-                        lower slip tolerance = later roll entry */ &&
-    tractionX > 0.55 /*priority2 → change this second
-                        makes roll harder to qualify for
-                        higher requirement = later roll */)
-  return 'roll';
+const double ROLL_SLIP_THRESH = 0.060;
+// priority1 → change this first
+// lower = roll happens later
 
-final double tractionX =
-    (0.95 /*priority3 → change this third
-             slows forward grip buildup
-             keeps the ball in hook longer before roll */ *
-            (1.0 - (slipX.abs() / vx.clamp(0.3, 30.0))))
-        .clamp(0.0, 1.0);
+const double ROLL_TX_THRESH = 0.50;
+// priority2 → change this second
+// higher = harder to enter roll
+
+const double TX_RISE = 2.6;
+// priority3 → change this third
+// lower = slower forward traction buildup
+
+const double OIL_X_DROP = 0.35;
+// priority4 → change this fourth
+// higher = oil suppresses forward traction more
 ```
 
 ---
@@ -226,15 +216,17 @@ final double tractionX =
 ## Stronger roll
 
 ```dart
-txScale = 1.05;
+const double TX_RISE = 2.6;
 // priority1 → change this first
-// increases forward drive during roll phase
-// makes the ball continue through the pins harder
+// increases forward drive
 
-tyScale = 0.15;
+const double ROLL_SLIP_THRESH = 0.060;
 // priority2 → change this second
-// reduces leftover sideways motion in roll
-// helps the ball straighten out and drive more cleanly
+// easier roll entry = more forward motion
+
+const double MIN_LATERAL_TRACTION = 0.02;
+// priority3 → change this third
+// lower = cleaner forward roll (less sideways hang)
 ```
 
 ---
@@ -242,14 +234,17 @@ tyScale = 0.15;
 ## Weaker roll
 
 ```dart
-txScale = 0.85;
+const double TX_RISE = 2.6;
 // priority1 → change this first
-// reduces forward drive during roll phase
+// lower = weaker forward drive
 
-tyScale = 0.35;
+const double ROLL_TX_THRESH = 0.50;
 // priority2 → change this second
-// allows more leftover sideways motion in roll
-// makes roll less defined and more curvy
+// harder to enter roll
+
+const double MIN_LATERAL_TRACTION = 0.02;
+// priority3 → change this third
+// higher = more sideways continuation
 ```
 
 ---
@@ -260,31 +255,36 @@ tyScale = 0.35;
 
 Use `STRIBECK_B` first.
 
-* lower `STRIBECK_B` = earlier hook
-* higher `STRIBECK_B` = later hook
+* lower = earlier hook
+* higher = later hook
+
+---
 
 ### Hook strength
 
-Use hook `tyScale` first.
+Use `TY_RISE` first.
 
-* higher `tyScale` = stronger hook
-* lower `tyScale` = weaker hook
+* higher = stronger hook
+* lower = weaker hook
+
+---
 
 ### Roll timing
 
-Use the roll condition first.
+Use roll thresholds first.
 
 * higher slip threshold = earlier roll
 * lower tractionX threshold = earlier roll
-* lower slip threshold = later roll
-* higher tractionX threshold = later roll
+* opposite = later roll
+
+---
 
 ### Roll strength
 
-Use `txScale` first, then `tyScale`.
+Use `TX_RISE` first.
 
-* higher `txScale` = stronger forward roll
-* lower `tyScale` = cleaner, stronger roll shape
+* higher = stronger forward roll
+* lower = weaker roll
 
 ---
 
@@ -304,25 +304,28 @@ Use `txScale` first, then `tyScale`.
 
 ## Quick lookup table
 
-| Goal          | First change        | Second change            | Third change      | Last change          |
-| ------------- | ------------------- | ------------------------ | ----------------- | -------------------- |
-| Earlier hook  | `STRIBECK_A` up     | `STRIBECK_B` down        | `tractionY` up    | lower hook threshold |
-| Later hook    | `STRIBECK_A` down   | `STRIBECK_B` up          | `tractionY` down  | raise hook threshold |
-| Stronger hook | hook `tyScale` up   | `STRIBECK_A` up          | `muBase` cap up   | —                    |
-| Weaker hook   | hook `tyScale` down | `STRIBECK_A` down        | `muBase` cap down | —                    |
-| Earlier roll  | slip threshold up   | tractionX threshold down | `tractionX` up    | —                    |
-| Later roll    | slip threshold down | tractionX threshold up   | `tractionX` down  | —                    |
-| Stronger roll | roll `txScale` up   | roll `tyScale` down      | —                 | —                    |
-| Weaker roll   | roll `txScale` down | roll `tyScale` up        | —                 | —                    |
+| Goal          | First change            | Second change         | Third change        | Last change          |
+| ------------- | ----------------------- | --------------------- | ------------------- | -------------------- |
+| Earlier hook  | `STRIBECK_B` down       | `STRIBECK_A` up       | `TY_RISE` up        | lower hook threshold |
+| Later hook    | `STRIBECK_B` up         | `STRIBECK_A` down     | `TY_RISE` down      | raise hook threshold |
+| Stronger hook | `TY_RISE` up            | `OIL_Y_DROP` down     | `STRIBECK_A` up     | friction cap up      |
+| Weaker hook   | `TY_RISE` down          | `OIL_Y_DROP` up       | `STRIBECK_A` down   | friction cap down    |
+| Earlier roll  | `ROLL_SLIP_THRESH` up   | `ROLL_TX_THRESH` down | `TX_RISE` up        | `OIL_X_DROP` down    |
+| Later roll    | `ROLL_SLIP_THRESH` down | `ROLL_TX_THRESH` up   | `TX_RISE` down      | `OIL_X_DROP` up      |
+| Stronger roll | `TX_RISE` up            | easier roll entry     | lower lateral carry | —                    |
+| Weaker roll   | `TX_RISE` down          | harder roll entry     | more lateral carry  | —                    |
 
 ---
 
 ## One-line summary
 
 * **Hook earlier/later** = mostly `STRIBECK_B`
-* **Hook stronger/weaker** = mostly hook `tyScale`
+* **Hook stronger/weaker** = mostly `TY_RISE`
 * **Roll earlier/later** = mostly roll thresholds
-* **Roll stronger/weaker** = mostly roll `txScale` and `tyScale`
+* **Roll stronger/weaker** = mostly `TX_RISE`
+
+---
+
 
 
 
