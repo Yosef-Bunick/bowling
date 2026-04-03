@@ -35,11 +35,11 @@ flutter run --macos
 flutter run --web
 ```
 # Known errors
-```text
+
 No real-life tests yet. If you have input, please contribute here, especially if you have experience with specific bowling patterns.
 
-Model tweaks are as follows.
-```
+# Model tweaks are as follows.
+
 ## Lane Breakdown Settings
 
 | Mode           | OIL_PICKUP_RATE | OIL_DEPOSIT_RATE | OIL_CARRY_BLEND | Effect                                                     |
