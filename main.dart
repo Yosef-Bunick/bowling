@@ -925,7 +925,7 @@ class _OilMapTabState extends State<_OilMapTab> {
               _lastScale = details.scale;
             } else {
               _yaw += details.focalPointDelta.dx * 0.01;
-              _pitch = (_pitch - details.focalPointDelta.dy * 0.01).clamp(0.35, 1.45);
+              _pitch = (_pitch - details.focalPointDelta.dy * 0.01).clamp(0.15, 1.45); //clamps how much you can rotate 3d model to the side (side,top)
             }
           });
         },
@@ -1043,6 +1043,7 @@ class _OilMapTabState extends State<_OilMapTab> {
 }
 
 // ─── 3D Oil Painter ───────────────────────────────────────────
+
 class _3DOilPainter extends CustomPainter {
   final List<List<double>> oilMatrix;
   final double distance;
@@ -1060,6 +1061,8 @@ class _3DOilPainter extends CustomPainter {
     required this.zoom,
   });
 
+  static const int boards = 39;
+
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(
@@ -1068,87 +1071,264 @@ class _3DOilPainter extends CustomPainter {
     );
     if (oilMatrix.isEmpty) return;
 
-    const int boards = 39;
     final int cols = oilMatrix.first.length;
     final double res = cols > 65 ? 0.25 : 1.0;
-    final int distCols = (distance / res).round().clamp(1, cols);
+    final int distCols = (distance / res).round().clamp(2, cols);
 
-    final double cx = size.width * 0.3;
-    final double cy = size.height * 0.76;
+    final smooth = _smoothMatrix(oilMatrix, boards, distCols);
 
-    final double laneWidth = size.width * 0.25 * zoom;
-    final double laneDepth = size.height * 2.15 * zoom;
-    final double heightScale = size.height * 0.20 * zoom;
+    final double cx = size.width * 0.5; // moves 3d model left and right
+    final double cy = size.height * 0.5; //moves 3d model up and down
 
-    Offset project(double boardIdx, double colIdx, double v) {
-      final double x = ((boardIdx / (boards - 1)) - 0.5) * laneWidth;
-      final double y = ((colIdx * res) / distance - 0.5) * laneDepth;
-      final double z = v * heightScale;
+    final double laneWidth = size.width * 0.30 * zoom;
+    final double laneDepth = size.height * 1.28 * zoom;
+    final double heightScale = size.height * 0.5 * zoom;
 
-      final double cosy = cos(yaw);
-      final double siny = sin(yaw);
-      final double x1 = x * cosy - y * siny;
-      final double y1 = x * siny + y * cosy;
-
-      final double cosp = cos(pitch);
-      final double sinp = sin(pitch);
-      final double y2 = y1 * cosp;
-      final double z2 = z + y1 * sinp;
-
-      final double cam = 900.0;
-      final double depth = cam + y2 + laneDepth * 0.65;
-      final double p = cam / depth.clamp(250.0, 2000.0);
-
-      final double sx = cx + x1 * p;
-      final double sy = cy + y2 * 0.18 * p - z2 * p;
-
-      return Offset(sx, sy);
-    }
-
-    final List<_CellFace> faces = [];
+    final List<_Face3D> faces = [];
 
     for (int col = 0; col < distCols - 1; col++) {
       for (int b = 0; b < boards - 1; b++) {
-        final double v00 = oilMatrix[b][col];
-        final double v10 = oilMatrix[b + 1][col];
-        final double v11 = oilMatrix[b + 1][col + 1];
-        final double v01 = oilMatrix[b][col + 1];
+        final double h00 = _heightify(smooth[b][col]);
+        final double h10 = _heightify(smooth[b + 1][col]);
+        final double h11 = _heightify(smooth[b + 1][col + 1]);
+        final double h01 = _heightify(smooth[b][col + 1]);
 
-        final p0 = project(b.toDouble(), col.toDouble(), v00);
-        final p1 = project((b + 1).toDouble(), col.toDouble(), v10);
-        final p2 = project((b + 1).toDouble(), (col + 1).toDouble(), v11);
-        final p3 = project(b.toDouble(), (col + 1).toDouble(), v01);
+        final _P3 a = _worldPoint(
+          b.toDouble(),
+          col.toDouble(),
+          h00,
+          laneWidth,
+          laneDepth,
+          heightScale,
+          res,
+        );
+        final _P3 b1 = _worldPoint(
+          (b + 1).toDouble(),
+          col.toDouble(),
+          h10,
+          laneWidth,
+          laneDepth,
+          heightScale,
+          res,
+        );
+        final _P3 c = _worldPoint(
+          (b + 1).toDouble(),
+          (col + 1).toDouble(),
+          h11,
+          laneWidth,
+          laneDepth,
+          heightScale,
+          res,
+        );
+        final _P3 d = _worldPoint(
+          b.toDouble(),
+          (col + 1).toDouble(),
+          h01,
+          laneWidth,
+          laneDepth,
+          heightScale,
+          res,
+        );
+
+        final _P3 ra = _rotate(a, yaw, pitch);
+        final _P3 rb = _rotate(b1, yaw, pitch);
+        final _P3 rc = _rotate(c, yaw, pitch);
+        final _P3 rd = _rotate(d, yaw, pitch);
+
+        final Offset pa = _project(ra, cx, cy);
+        final Offset pb = _project(rb, cx, cy);
+        final Offset pc = _project(rc, cx, cy);
+        final Offset pd = _project(rd, cx, cy);
 
         final path = Path()
-          ..moveTo(p0.dx, p0.dy)
-          ..lineTo(p1.dx, p1.dy)
-          ..lineTo(p2.dx, p2.dy)
-          ..lineTo(p3.dx, p3.dy)
+          ..moveTo(pa.dx, pa.dy)
+          ..lineTo(pb.dx, pb.dy)
+          ..lineTo(pc.dx, pc.dy)
+          ..lineTo(pd.dx, pd.dy)
           ..close();
 
-        final avgDepth = (col + col + 1) * 0.5;
-        final avgOil = (v00 + v10 + v11 + v01) / 4.0;
+        final avgOil = (
+          smooth[b][col] +
+          smooth[b + 1][col] +
+          smooth[b + 1][col + 1] +
+          smooth[b][col + 1]
+        ) / 4.0;
 
-        faces.add(_CellFace(
+        final normal = _normalFromHeights(a, b1, c);
+        final shade = _lighting(normal);
+
+        faces.add(_Face3D(
           path: path,
-          depth: avgDepth,
-          color: colorFn(avgOil),
+          depth: (ra.y + rb.y + rc.y + rd.y) / 4.0,
+          color: _shadeColor(colorFn(avgOil), shade),
+          edge: avgOil > 0.015,
         ));
       }
     }
 
-    faces.sort((a, b) => a.depth.compareTo(b.depth));
+    faces.sort((m, n) => m.depth.compareTo(n.depth));
 
     for (final face in faces) {
       canvas.drawPath(face.path, Paint()..color = face.color);
-      canvas.drawPath(
-        face.path,
-        Paint()
-          ..color = Colors.black.withOpacity(0.12)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 0.35,
-      );
+      if (face.edge) {
+        canvas.drawPath(
+          face.path,
+          Paint()
+            ..color = Colors.black.withOpacity(0.08)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 0.20,
+        );
+      }
     }
+
+    _drawLaneOutline(canvas, laneWidth, laneDepth, cx, cy);
+  }
+
+  List<List<double>> _smoothMatrix(List<List<double>> src, int bCount, int cCount) {
+    final tmp = List.generate(
+      bCount,
+      (b) => List<double>.generate(cCount, (c) => src[b][c]),
+    );
+
+    for (int pass = 0; pass < 2; pass++) {
+      final out = List.generate(
+        bCount,
+        (_) => List<double>.filled(cCount, 0.0),
+      );
+
+      for (int b = 0; b < bCount; b++) {
+        for (int c = 0; c < cCount; c++) {
+          double sum = 0.0;
+          double wsum = 0.0;
+
+          for (int db = -1; db <= 1; db++) {
+            for (int dc = -2; dc <= 2; dc++) {
+              final int bb = (b + db).clamp(0, bCount - 1);
+              final int cc = (c + dc).clamp(0, cCount - 1);
+
+              final double wBoard = db == 0 ? 1.0 : 0.55;
+              final int adc = dc.abs();
+              final double wLane = adc == 0 ? 1.35 : (adc == 1 ? 1.0 : 0.55);
+
+              final double w = wBoard * wLane;
+              sum += tmp[bb][cc] * w;
+              wsum += w;
+            }
+          }
+
+          out[b][c] = sum / wsum;
+        }
+      }
+
+      for (int b = 0; b < bCount; b++) {
+        for (int c = 0; c < cCount; c++) {
+          tmp[b][c] = out[b][c];
+        }
+      }
+    }
+
+    return tmp;
+  }
+
+  double _heightify(double v) {
+    final double x = v.clamp(0.0, 1.0);
+    return pow(x, 0.82).toDouble() * 0.48;
+  }
+
+  _P3 _worldPoint(
+    double boardIdx,
+    double colIdx,
+    double v,
+    double laneWidth,
+    double laneDepth,
+    double heightScale,
+    double res,
+  ) {
+    final double x = ((boardIdx / (boards - 1)) - 0.5) * laneWidth;
+    final double y = (((colIdx * res) / distance) - 0.5) * laneDepth;
+    final double z = v * heightScale;
+    return _P3(x, y, z);
+  }
+
+  _P3 _rotate(_P3 p, double yaw, double pitch) {
+    final double cosy = cos(yaw);
+    final double siny = sin(yaw);
+    final double x1 = p.x * cosy - p.y * siny;
+    final double y1 = p.x * siny + p.y * cosy;
+
+    final double cosp = cos(pitch);
+    final double sinp = sin(pitch);
+    final double y2 = y1 * cosp;
+    final double z2 = p.z + y1 * sinp;
+
+    return _P3(x1, y2, z2);
+  }
+
+  Offset _project(_P3 p, double cx, double cy) {
+    const double cam = 1100.0;
+    final double depth = (cam + p.y + 500.0).clamp(250.0, 5000.0);
+    final double s = cam / depth;
+    return Offset(
+      cx + p.x * s,
+      cy + p.y * 0.16 * s - p.z * s,
+    );
+  }
+
+  _P3 _normalFromHeights(_P3 a, _P3 b, _P3 c) {
+    final double ux = b.x - a.x;
+    final double uy = b.y - a.y;
+    final double uz = b.z - a.z;
+
+    final double vx = c.x - a.x;
+    final double vy = c.y - a.y;
+    final double vz = c.z - a.z;
+
+    final double nx = uy * vz - uz * vy;
+    final double ny = uz * vx - ux * vz;
+    final double nz = ux * vy - uy * vx;
+
+    final double len = sqrt(nx * nx + ny * ny + nz * nz);
+    if (len < 1e-9) return const _P3(0, 0, 1);
+    return _P3(nx / len, ny / len, nz / len);
+  }
+
+  double _lighting(_P3 n) {
+    const double lx = -0.35;
+    const double ly = -0.25;
+    const double lz = 0.90;
+    final double dot = (n.x * lx + n.y * ly + n.z * lz).clamp(-1.0, 1.0);
+    return 0.72 + 0.28 * dot;
+  }
+
+  Color _shadeColor(Color c, double shade) {
+    return Color.fromARGB(
+      255,
+      (c.red * shade).clamp(0, 255).round(),
+      (c.green * shade).clamp(0, 255).round(),
+      (c.blue * shade).clamp(0, 255).round(),
+    );
+  }
+
+  void _drawLaneOutline(Canvas canvas, double laneWidth, double laneDepth, double cx, double cy) {
+    final p0 = _project(_rotate(_P3(-laneWidth / 2, -laneDepth / 2, 0), yaw, pitch), cx, cy);
+    final p1 = _project(_rotate(_P3(laneWidth / 2, -laneDepth / 2, 0), yaw, pitch), cx, cy);
+    final p2 = _project(_rotate(_P3(laneWidth / 2, laneDepth / 2, 0), yaw, pitch), cx, cy);
+    final p3 = _project(_rotate(_P3(-laneWidth / 2, laneDepth / 2, 0), yaw, pitch), cx, cy);
+
+    final path = Path()
+      ..moveTo(p0.dx, p0.dy)
+      ..lineTo(p1.dx, p1.dy)
+      ..lineTo(p2.dx, p2.dy)
+      ..lineTo(p3.dx, p3.dy)
+      ..close();
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Colors.white.withOpacity(0.10)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
   }
 
   @override
@@ -1160,14 +1340,24 @@ class _3DOilPainter extends CustomPainter {
       old.zoom != zoom;
 }
 
-class _CellFace {
+class _P3 {
+  final double x;
+  final double y;
+  final double z;
+  const _P3(this.x, this.y, this.z);
+}
+
+class _Face3D {
   final Path path;
   final double depth;
   final Color color;
+  final bool edge;
 
-  _CellFace({
+  const _Face3D({
     required this.path,
     required this.depth,
     required this.color,
+    required this.edge,
   });
 }
+
