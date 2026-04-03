@@ -36,7 +36,7 @@ flutter run --web
 ```
 # Known errors
 
-No real-life tests yet. If you have input, please contribute here, especially if you have experience with specific bowling patterns.
+No real-life tests yet. If you have input, please contribute here, especially if you have experience with specific bowling patterns. tuning parameters need help bellow!
 
 # Model tweaks are as follows.
 
