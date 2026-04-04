@@ -5,10 +5,10 @@ Real Physics Bowling Simulation. It simulates ball movement on a complex bowling
 Feel free to contribute to this code. It is already fairly thorough, but still needs a few tweaks.
 
 # FORMULA OPTIONS 
-
+```text
 BOWLING2,3 μ_eff = oil · [MU_OIL_MIN + C(1-e^(-D·Ĥ))]  +  (1-oil) · [μ_min + a/(H+b) + c·H]
 BOWLING4 μ(v_slip, H) = μ_c + (μ_s·e^(-aH) - μ_c) · e^(-(v_slip/v_s(1+bH))²)
-
+```
 
 ## Setup
 
