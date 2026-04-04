@@ -1,3 +1,4 @@
+//same as physics.dart just better tweaks for constants. makes the ball move better.
 import 'dart:math';
 
 // ═══════════════════════════════════════════════════════════
