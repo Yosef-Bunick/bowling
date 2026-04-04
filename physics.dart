@@ -25,8 +25,8 @@ const double DIFF_REF_IN = 0.040;
 const double ASY_THRESH  = 0.013;
 
 // Unified roll/phase detection thresholds (used in both sim engines)
-const double ROLL_SLIP_THRESH = 0.060;
-const double ROLL_TX_THRESH   = 0.50;
+// const double ROLL_SLIP_THRESH = 0.2;
+// const double ROLL_TX_THRESH   = 0.005;
 
 const Map<String, double> GRIT_DRY_MU = {
   '500':0.30,'1000':0.23,'2000':0.20,'3000':0.15,'4000':0.11,'polish':0.09,
@@ -99,26 +99,46 @@ const double X_SKID_SLIP = 0.95;
 const double X_ROLL_SLIP = 0.06;
 const double Y_SKID_SLIP = 0.70;
 const double Y_ROLL_SLIP = 0.04;
+//////////////////////////////////////////////////////////////
+/////////////////////////////BEGIN TUNING
+//////////////////////////////////////////////////////////////
+//moved from bottom for easy tuning
+const double STRIBECK_A = 0.005;
+const double STRIBECK_B = 0.045;
+const double STRIBECK_C = 0.025;
+const double STRIBECK_D = 12.0;
+const double H_REF = 1.5e-6;
 
 // Oil suppresses usable traction. Lateral traction is more sensitive.
-const double OIL_X_DROP = 0.35;
-const double OIL_Y_DROP = 0.75;
-const double OIL_X_EXP  = 1.10;
-const double OIL_Y_EXP  = 1.25;
+const double OIL_X_DROP = 0.10;
+const double OIL_Y_DROP = 0.15;
+const double OIL_X_EXP  = 1.15;
+const double OIL_Y_EXP  = 1.10;
 
 // Traction-state response rates (per second)
-const double TX_RISE = 2.6;
-const double TX_FALL = 7.0;
-const double TY_RISE = 1.2;
-const double TY_FALL = 6.5;
+const double TX_RISE = 12.0;
+const double TX_FALL = 5.0;
+const double TY_RISE = 7.0;
+const double TY_FALL = 8.0;
+
+
+//moved from top for easier tuning
+const double ROLL_SLIP_THRESH = 0.2;
+const double ROLL_TX_THRESH   = 0.013;
 
 // Never let lateral bite fully vanish; weak early traction still exists.
-const double MIN_LATERAL_TRACTION = 0.02;
+const double MIN_LATERAL_TRACTION = 0.04;
+
 
 // Oil transfer / carrydown approximation
 const double OIL_PICKUP_RATE  = .02;
 const double OIL_DEPOSIT_RATE = .012;
 const double OIL_CARRY_BLEND  = .25;
+
+//////////////////////////////////////////////////////////////
+/////////////////////////////END TUNING
+//////////////////////////////////////////////////////////////
+
 
 // Fresh-cover / flare exposure approximation
 const double FLARE_DIFF_GAIN = 0.90;
@@ -631,6 +651,8 @@ SimResult runSimulation(BowlerInputs inp, PatternData pat, BallSpecs ball, List<
   String segPhase = 'skid';
   double prevOil = oilAt2D(oilMatrix, board, ft);
   bool inGutter = false;
+  bool wasRolling = false;
+  double rollHeadingRad = 0.0;
 
   while (ft < LANE_FT.toDouble() && vx > 0.3) {
     final double oilLocal = oilAt2D(oilMatrix, board, ft);
@@ -677,6 +699,7 @@ SimResult runSimulation(BowlerInputs inp, PatternData pat, BallSpecs ball, List<
 
     // Slip controls whether the ball is ready to grip; oil controls how much grip survives.
     final double slipBlendX = blendBySlip(slipRatio, X_SKID_SLIP, X_ROLL_SLIP);
+    
     final double slipBlendY = blendBySlip(slipRatio, Y_SKID_SLIP, Y_ROLL_SLIP);
     final double oilGripX = oilGripFactor(oilLocal, OIL_X_DROP, OIL_X_EXP);
     final double oilGripY = oilGripFactor(oilLocal, OIL_Y_DROP, OIL_Y_EXP);
@@ -702,14 +725,28 @@ SimResult runSimulation(BowlerInputs inp, PatternData pat, BallSpecs ball, List<
       omegaF = vx / BALL_R_M;
       omegaH *= 0.85;
       omegaT *= 0.95;
+      wasRolling = false;
     } else if (rolling) {
+      if (!wasRolling) {
+        rollHeadingRad = atan2(vy, vx);
+        wasRolling = true;
+      }
+
       final double decel = MU_ROLL_RES * Fn / massKg;
-      omegaF = vx / BALL_R_M;
-      omegaH *= (1.0 - 0.04 * dt * 60.0).clamp(0.0, 1.0);
-      omegaT *= (1.0 - 0.02 * dt * 60.0).clamp(0.0, 1.0);
-      vx = max(0.3, vx - decel * dt);
-      vy *= 0.97;
+      final double speedMag = sqrt(vx * vx + vy * vy);
+      final double nextSpeed = max(0.3, speedMag - decel * dt);
+
+      omegaF = nextSpeed / BALL_R_M;
+      omegaH *= 0.80;
+      omegaT *= 0.95;
+
+      vx = nextSpeed * cos(rollHeadingRad);
+      vy = nextSpeed * sin(rollHeadingRad);
+
+      if (vy.abs() < 0.002) vy = 0.0;
+      if (omegaH.abs() < 0.04) omegaH = 0.0;
     } else {
+      wasRolling = false;
       Fx = -muX * Fn * ux;
       Fy = -muY * Fn * uy * lateralScale;
 
@@ -748,7 +785,7 @@ SimResult runSimulation(BowlerInputs inp, PatternData pat, BallSpecs ball, List<
     final double slipMagPost = sqrt(slipXPost * slipXPost + slipYPost * slipYPost);
     final double slipRatioPost = vx.abs() > 1e-6 ? slipMagPost / vx.abs() : 0.0;
     final bool rollingPost = !inGutter && slipRatioPost < ROLL_SLIP_THRESH && tractionX > ROLL_TX_THRESH;
-    final String phase = rollingPost ? 'roll' : (tractionY > 0.18 ? 'hook' : 'skid');
+    final String phase = rollingPost ? 'roll' : (tractionY > 0.12 ? 'hook' : 'skid'); 
 
     theta += newOmegaTot * dt;
     ft += STEP_FT;
@@ -832,14 +869,16 @@ SimResult runSimulation(BowlerInputs inp, PatternData pat, BallSpecs ball, List<
 // Contact area proxy for Hersey number (m²)
 const double CONTACT_AREA_M2 = 5.0e-4;
 
+//change for tuning {
+
 // Stribeck-on-H^ friction model
 // μ(H^) = μ_min + A/(H^ + B) + C(1 - e^(-D·H^))
 // H^ rescales the tiny Hersey numbers into a useful tuning range.
-const double STRIBECK_A = 0.0024;
-const double STRIBECK_B = 0.008;
-const double STRIBECK_C = 0.005;
-const double STRIBECK_D = 12.0;
-const double H_REF = 2.0e-6;
+// const double STRIBECK_A = 0.005;
+// const double STRIBECK_B = 0.045;
+// const double STRIBECK_C = 0.025;
+// const double STRIBECK_D = 12.0;
+// const double H_REF = 1.5e-6;
 
 double stribeckMuHat(double hHat, double muMin) {
   return muMin +
@@ -890,6 +929,8 @@ SimResult runSimulationV2(BowlerInputs inp, PatternData pat, BallSpecs ball, Oil
   OilSample prevSample = oil.sampleAt(board, ft);
   double prevOil = prevSample.totalOil;
   bool inGutter = false;
+  bool wasRolling = false;
+  double rollHeadingRad = 0.0;
 
   while (ft < LANE_FT.toDouble() && vx > 0.3) {
     // Sample oil with viscosity
@@ -971,14 +1012,28 @@ SimResult runSimulationV2(BowlerInputs inp, PatternData pat, BallSpecs ball, Oil
       omegaF = vx / BALL_R_M;
       omegaH *= 0.85;
       omegaT *= 0.95;
+      wasRolling = false;
     } else if (rolling) {
+      if (!wasRolling) {
+        rollHeadingRad = atan2(vy, vx);
+        wasRolling = true;
+      }
+
       final double decel = MU_ROLL_RES * Fn / massKg;
-      omegaF = vx / BALL_R_M;
-      omegaH *= (1.0 - 0.04 * dt * 60.0).clamp(0.0, 1.0);
-      omegaT *= (1.0 - 0.02 * dt * 60.0).clamp(0.0, 1.0);
-      vx = max(0.3, vx - decel * dt);
-      vy *= 0.97;
+      final double speedMag = sqrt(vx * vx + vy * vy);
+      final double nextSpeed = max(0.3, speedMag - decel * dt);
+
+      omegaF = nextSpeed / BALL_R_M;
+      omegaH *= 0.80;
+      omegaT *= 0.95;
+
+      vx = nextSpeed * cos(rollHeadingRad);
+      vy = nextSpeed * sin(rollHeadingRad);
+
+      if (vy.abs() < 0.002) vy = 0.0;
+      if (omegaH.abs() < 0.04) omegaH = 0.0;
     } else {
+      wasRolling = false;
       Fx = -muX * Fn * ux;
       Fy = -muY * Fn * uy * lateralScale;
 
@@ -989,6 +1044,7 @@ SimResult runSimulationV2(BowlerInputs inp, PatternData pat, BallSpecs ball, Oil
       final double alphaH =  (BALL_R_M * Fy) / Ieff;
       omegaF += alphaF * dt;
       omegaH += alphaH * dt;
+      
 
       if (omegaF < 0.0) omegaF = 0.0;
 
