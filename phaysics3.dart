@@ -7,7 +7,7 @@ import 'dart:math';
 // - Spin state         : p11/p16 -> full vector (omegaX, omegaY, omegaZ)
 // - Slip math          : p8/p17  -> stable contact slip with explicit handedness
 // - Friction / shaping : p8/p17  -> tractionX / tractionY, muX / muY, lateralScale
-// - Roll transition    : p8/p17  -> stable rolling handoff
+// - Roll transition    : p8/p17  -> stable rolling handoff (WITH PERMANENT LATCH)
 // - Phase classification: p7/p8/p17 -> skid / hook / roll by traction build + roll state
 // - Spin update        : p7/p8/p17 for now -> simple contact torques, NO Euler coupling
 // - Integration        : p17 -> RK4
@@ -50,20 +50,20 @@ const double X_SKID_SLIP = 0.95;
 const double X_ROLL_SLIP = 0.06;
 const double Y_SKID_SLIP = 0.85;
 const double Y_ROLL_SLIP = 0.04;
-const double STRIBECK_A = 0.008;
+const double STRIBECK_A = 0.012;
 const double STRIBECK_B = 0.010;
 const double STRIBECK_C = 0.015;
 const double STRIBECK_D = 15.0;
 const double H_REF = 2.2e-6;
 const double OIL_X_DROP = 0.10;
-const double OIL_Y_DROP = 0.4;
+const double OIL_Y_DROP = 0.4;//increase for delayed hook
 const double OIL_X_EXP = 1.15;
 const double OIL_Y_EXP = 1.30;
 const double TX_RISE = 1.0;
 const double TX_FALL = 5.0;
-const double TY_RISE = 0.7;//deecrease to delay hook
+const double TY_RISE = .7;//deecrease to delay hook
 const double TY_FALL = 5.0;
-const double ROLL_SLIP_THRESH = 0.02;
+const double ROLL_SLIP_THRESH = 0.06;//if the mph and rpm are 
 const double ROLL_TX_THRESH = 0.013;
 const double MIN_LATERAL_TRACTION = 0.03;
 const double HOOK_PHASE_TY_THRESH = 0.25;
@@ -634,6 +634,7 @@ class _BallState {
   final double tractionX;
   final double tractionY;
   final double ballOil;
+  final bool isRollLocked; // <-- NEW LATCH
 
   const _BallState({
     required this.ft,
@@ -647,6 +648,7 @@ class _BallState {
     required this.tractionX,
     required this.tractionY,
     required this.ballOil,
+    this.isRollLocked = false, // <-- DEFAULTS TO FALSE
   });
 
   _BallState addScaled(_BallDeriv k, double h) => _BallState(
@@ -661,6 +663,7 @@ class _BallState {
         tractionX: tractionX + k.dTractionX * h,
         tractionY: tractionY + k.dTractionY * h,
         ballOil: ballOil + k.dBallOil * h,
+        isRollLocked: isRollLocked, // <-- PASS LATCH THROUGH
       );
 
   _BallState clamp() => _BallState(
@@ -675,6 +678,7 @@ class _BallState {
         tractionX: tractionX.clamp(0.0, 1.0),
         tractionY: tractionY.clamp(0.0, 1.0),
         ballOil: ballOil.clamp(0.0, 1.0),
+        isRollLocked: isRollLocked, // <-- PASS LATCH THROUGH
       );
 }
 
@@ -824,7 +828,9 @@ _ContactEval _evaluateContact({
   final double muX = muK * (1.0 - tractionX) + muS * tractionX;
   final double muY = muK * (1.0 - tractionY) + muS * tractionY;
   final double lateralScale = MIN_LATERAL_TRACTION + (1.0 - MIN_LATERAL_TRACTION) * tractionY;
-  final bool rolling = !inGutter && slipRatio < ROLL_SLIP_THRESH && tractionX > ROLL_TX_THRESH;
+
+  // <-- LATCH EVALUATED HERE -->
+  final bool rolling = !inGutter && (s.isRollLocked || (slipRatio < ROLL_SLIP_THRESH && tractionX > ROLL_TX_THRESH));
 
   return _ContactEval(
     oilLocal: oilLocal,
@@ -885,12 +891,22 @@ _BallDeriv _evalDeriv({
     final double speedMag = sqrt(s.vx * s.vx + s.vy * s.vy).clamp(0.3, 30.0);
     final double decel = MU_ROLL_RES * fn / massKg;
     final double dSpeed = speedMag <= 0.31 ? 0.0 : -decel;
+    
     dVx = dSpeed * cos(rollHeadingRad);
     dVy = dSpeed * sin(rollHeadingRad);
-    dOmegaY = dSpeed / BALL_R_M;
-    dOmegaX = log(0.80) / dt * s.omegaX;
-    dOmegaZ = log(0.95) / dt * s.omegaZ;
-  } else {
+    
+    // Calculate the perfect "no-slip" spin on BOTH axes based on the ball's actual angle
+    final double targetOmegaY = s.vx / BALL_R_M;
+    final double targetOmegaX = -s.vy / (handedness * BALL_R_M);
+    
+    // Apply static friction "spring" to force the spin to perfectly track the velocity on both axes.
+    // The feed-forward term (dSpeed...) keeps them perfectly in sync as the ball slows down.
+    dOmegaY = (targetOmegaY - s.omegaY) * 30.0 + ((dSpeed * cos(rollHeadingRad)) / BALL_R_M);
+    dOmegaX = (targetOmegaX - s.omegaX) * 30.0 - ((dSpeed * sin(rollHeadingRad)) / (handedness * BALL_R_M));
+    
+    // Tilt (Z-axis spin) doesn't cause floor slip, so we can still smoothly kill it
+    dOmegaZ = log(0.95) / dt * s.omegaZ; 
+    } else {
     final double fx = -c.muX * fn * c.ux;
     final double fy = -c.muY * fn * c.uy * c.lateralScale;
 
@@ -898,7 +914,7 @@ _BallDeriv _evalDeriv({
     dVy = fy / massKg;
 
     // Keep p7/p17 simple torque update for stability: no Euler coupling yet.
-    dOmegaX = (-BALL_R_M * fy) / inertia.ix;
+    dOmegaX = (BALL_R_M * fy) / inertia.ix;
     dOmegaY = (-BALL_R_M * fx) / inertia.iy;
     dOmegaZ = -s.omegaZ * (0.018 + 0.045 * s.tractionY.clamp(0.0, 1.0)) * 60.0;
   }
@@ -991,6 +1007,7 @@ _BallState _rk4Step({
     tractionX: s.tractionX + dt * (k1.dTractionX + 2.0 * k2.dTractionX + 2.0 * k3.dTractionX + k4.dTractionX) / 6.0,
     tractionY: s.tractionY + dt * (k1.dTractionY + 2.0 * k2.dTractionY + 2.0 * k3.dTractionY + k4.dTractionY) / 6.0,
     ballOil: s.ballOil + dt * (k1.dBallOil + 2.0 * k2.dBallOil + 2.0 * k3.dBallOil + k4.dBallOil) / 6.0,
+    isRollLocked: s.isRollLocked, // <-- PASS LATCH THROUGH
   ).clamp();
 }
 
@@ -1022,6 +1039,7 @@ SimResult _runSimulationCore({
     tractionX: 0.0,
     tractionY: 0.0,
     ballOil: 0.0,
+    isRollLocked: false,
   );
 
   const double dt = 1.0 / 240.0;
@@ -1037,7 +1055,7 @@ SimResult _runSimulationCore({
   String segPhase = 'skid';
   double prevOil = sampleOil(state.board, state.ft).totalOil;
   bool inGutter = false;
-  bool wasRolling = false;
+  bool hasHooked = false;
   double rollHeadingRad = atan2(state.vy, state.vx);
 
   while (state.ft < LANE_FT.toDouble() && state.vx > 0.3) {
@@ -1050,13 +1068,25 @@ SimResult _runSimulationCore({
       handedness: inp.handedness,
     );
 
-    if (!inGutter && pre.rolling) {
-      if (!wasRolling) {
+// Keep track of when the ball officially starts hooking
+    if (state.tractionY > hookThreshold) {
+      hasHooked = true;
+    }
+
+    // <-- TRIGGER THE LATCH -->
+    // Lock into a roll if the slip mathematical threshold is met, 
+    // OR if the lateral hook has naturally finished resolving!
+    if (!inGutter && !state.isRollLocked) {
+      if (pre.rolling || (hasHooked && state.tractionY < hookThreshold)) {
         rollHeadingRad = atan2(state.vy, state.vx);
-        wasRolling = true;
+        state = _BallState(
+          ft: state.ft, board: state.board, vx: state.vx, vy: state.vy,
+          omegaX: state.omegaX, omegaY: state.omegaY, omegaZ: state.omegaZ,
+          theta: state.theta, tractionX: state.tractionX, tractionY: state.tractionY,
+          ballOil: state.ballOil, 
+          isRollLocked: true, // <-- Latch fires!
+        );
       }
-    } else {
-      wasRolling = false;
     }
 
     state = _rk4Step(
