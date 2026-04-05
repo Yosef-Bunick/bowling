@@ -1,5 +1,5 @@
 import 'dart:math';
-//(physics 18)
+//(physics 18 with parmeters tuned a bit)
 // ═══════════════════════════════════════════════════════════
 // BOWLING PHYSICS ENGINE — HYBRID KEEPER MATRIX
 //
