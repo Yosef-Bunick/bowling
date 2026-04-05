@@ -1,5 +1,5 @@
 import 'dart:math';
-//(physics 18 with parmeters tuned a bit)
+
 // ═══════════════════════════════════════════════════════════
 // BOWLING PHYSICS ENGINE — HYBRID KEEPER MATRIX
 //
@@ -48,7 +48,7 @@ const double MU_K_DRY_SCALE = 0.2;
 const double MU_S_OIL_MIN = 0.024;
 const double X_SKID_SLIP = 0.95;
 const double X_ROLL_SLIP = 0.06;
-const double Y_SKID_SLIP = 0.70;
+const double Y_SKID_SLIP = 0.85;
 const double Y_ROLL_SLIP = 0.04;
 const double STRIBECK_A = 0.008;
 const double STRIBECK_B = 0.010;
@@ -61,13 +61,13 @@ const double OIL_X_EXP = 1.15;
 const double OIL_Y_EXP = 1.30;
 const double TX_RISE = 1.0;
 const double TX_FALL = 5.0;
-const double TY_RISE = 1.0;
+const double TY_RISE = 0.7;//deecrease to delay hook
 const double TY_FALL = 5.0;
 const double ROLL_SLIP_THRESH = 0.02;
 const double ROLL_TX_THRESH = 0.013;
 const double MIN_LATERAL_TRACTION = 0.03;
-const double HOOK_PHASE_TY_THRESH = 0.18;
-const double BREAKPOINT_TY_THRESH = 0.20;
+const double HOOK_PHASE_TY_THRESH = 0.25;
+const double BREAKPOINT_TY_THRESH = 0.28;
 const double OIL_PICKUP_RATE = 0.02;
 const double OIL_DEPOSIT_RATE = 0.012;
 const double OIL_CARRY_BLEND = 0.25;
