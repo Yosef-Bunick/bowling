@@ -356,7 +356,18 @@ const double ROLL_SLIP_THRESH = 0.05; // Slightly tighter roll lock
 const double ROLL_TX_THRESH   = 0.60; 
 
 // ─── FRICTION BLENDING ──────────────────────────────
-const double MIN_LATERAL_TRACTION = 0.03; 
+const double MIN_LATERAL_TRACTION = 0.03;
+
+// brush movement how much oil gets dropped off ──────────────────────────────
+  double alphaF = 0.25,
+  double rF = 0.91,
+  double alphaR = 0.32,
+  double rR = 0.94,
+  double k = 0.85,
+  double beta = 0.35,
+  double gamma = 0.12,
+  double eta = 0.45,
+  double lambda = 0.75,
 
 
 ---
