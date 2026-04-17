@@ -13,6 +13,7 @@ BOWLING4 μ(v_slip, H) = μ_c + (μ_s·e^(-aH) - μ_c) · e^(-(v_slip/v_s(1+bH))
 ## Setup
 
 ```text
+flutter create fileholder
 fileholder/
 └── lib/
     ├── main.dart
