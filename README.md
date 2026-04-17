@@ -33,12 +33,12 @@ flutter run
 ```
 # Alternatively:
 ```text
-flutter run --windows
-flutter run --linux
-flutter run --ios
-flutter run --android
-flutter run --macos
-flutter run --web
+flutter run -d windows
+flutter run -d linux
+flutter run -d ios
+flutter run -d android
+flutter run -d macos
+flutter run -d web
 ```
 # Known errors
 
