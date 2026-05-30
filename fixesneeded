@@ -1,4 +1,8 @@
-Here’s a compact scorecard for the math in your current model, based on **“10 = strongly physics-grounded”** and **“1 = basically a game hack.”** The formulas and structure come from your current `physics.dart`. 
+AI generated #fixme!
+
+Here’s a compact scorecard for the math in your current model, 
+based on **“10 = strongly physics-grounded”** and **“1 = basically a game hack.”** 
+The formulas and structure come from your current `physics.dart`. 
 
     Part                             | Current approach                                     | Physics Score /10 | Notes
     ─────────────────────────────────┼──────────────────────────────────────────────────────┼───────────┼──────────────────────────────────
