@@ -1,0 +1,280 @@
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font-sans, system-ui); color: var(--color-text-primary, #1a1a1a); }
+  .matrix { width: 100%; border-collapse: collapse; font-size: 11.5px; line-height: 1.35; }
+  .matrix th, .matrix td { border: 0.5px solid var(--color-border-tertiary, rgba(0,0,0,0.12)); padding: 6px 8px; vertical-align: top; text-align: left; }
+  .matrix th { background: var(--color-background-secondary, #f5f5f0); font-weight: 500; font-size: 11px; position: sticky; top: 0; }
+  .matrix th.cat { background: var(--color-background-info, #E6F1FB); color: var(--color-text-info, #185FA5); font-size: 12px; font-weight: 500; }
+  .matrix td.aspect { font-weight: 500; min-width: 110px; background: var(--color-background-secondary, #f5f5f0); }
+  .best { background: rgba(29,158,117,0.08); }
+  .warn { background: rgba(216,90,48,0.06); }
+  .tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 500; margin-top: 2px; }
+  .tag-best { background: #E1F5EE; color: #0F6E56; }
+  .tag-good { background: #E6F1FB; color: #185FA5; }
+  .tag-ok { background: #FAEEDA; color: #854F0B; }
+  .tag-bad { background: #FCEBEB; color: #A32D2D; }
+  .note { font-size: 10.5px; color: var(--color-text-secondary, #666); margin-top: 3px; }
+  h3 { font-size: 14px; font-weight: 500; margin: 16px 0 6px; color: var(--color-text-secondary, #555); }
+  @media (prefers-color-scheme: dark) {
+    .tag-best { background: #085041; color: #9FE1CB; }
+    .tag-good { background: #0C447C; color: #B5D4F4; }
+    .tag-ok { background: #633806; color: #FAC775; }
+    .tag-bad { background: #791F1F; color: #F7C1C1; }
+    .best { background: rgba(29,158,117,0.12); }
+    .warn { background: rgba(216,90,48,0.10); }
+  }
+</style>
+
+<div style="overflow-x: auto; padding: 0.5rem 0;">
+
+<table class="matrix">
+<thead>
+<tr>
+  <th class="cat">Aspect</th>
+  <th>P7 <div class="note">best before s-shape clip</div></th>
+  <th>P8 <div class="note">best before Euler</div></th>
+  <th>P11 <div class="note">Euler rigid body</div></th>
+  <th>P17 <div class="note">RK4 refactor</div></th>
+  <th>P18 <div class="note">hybrid keeper</div></th>
+</tr>
+</thead>
+<tbody>
+
+<tr><td colspan="6" class="cat" style="text-align:center;">Integration method</td></tr>
+<tr>
+  <td class="aspect">ODE integrator</td>
+  <td>Forward Euler (fixed 0.25 ft steps) <span class="tag tag-ok">basic</span></td>
+  <td>Forward Euler (fixed 0.25 ft steps) <span class="tag tag-ok">basic</span></td>
+  <td>Forward Euler (fixed 0.25 ft steps) <span class="tag tag-ok">basic</span></td>
+  <td class="best">RK4 (dt=1/240s, ~4× evals/step) <span class="tag tag-best">best</span></td>
+  <td class="best">RK4 (dt=1/240s), full vector state <span class="tag tag-best">best</span></td>
+</tr>
+<tr>
+  <td class="aspect">State representation</td>
+  <td>Inline vars (vx, vy, ωF, ωH, ωT)</td>
+  <td>Inline vars (vx, vy, ωF, ωH, ωT)</td>
+  <td>Full vector (ωx, ωy, ωz) + InertiaTensor <span class="tag tag-good">richer</span></td>
+  <td>_BallState + _BallDeriv structs <span class="tag tag-good">clean</span></td>
+  <td class="best">_BallState (ωx,ωy,ωz) + _BallDeriv + InertiaTensor <span class="tag tag-best">best</span></td>
+</tr>
+
+<tr><td colspan="6" class="cat" style="text-align:center;">Friction model</td></tr>
+<tr>
+  <td class="aspect">μ formula</td>
+  <td>Stribeck-on-Ĥ: μ_min + A/(Ĥ+B) + C(1−e^(−DĤ)) <span class="tag tag-good">good</span></td>
+  <td>Same Stribeck-on-Ĥ <span class="tag tag-good">good</span></td>
+  <td>Same Stribeck-on-Ĥ but different A/B/C/D tuning <span class="tag tag-good">tuned differently</span></td>
+  <td>Same Stribeck-on-Ĥ <span class="tag tag-good">good</span></td>
+  <td>Same Stribeck-on-Ĥ <span class="tag tag-good">good</span></td>
+</tr>
+<tr>
+  <td class="aspect">Stribeck constants</td>
+  <td>A=0.005, B=0.045, C=0.025, D=12, H_REF=1.5e-6</td>
+  <td>Same as P7</td>
+  <td class="warn">A=0.0035, B=0.06, C=0.018, D=10, H_REF=2e-6 <span class="tag tag-ok">lower grip</span></td>
+  <td>Same as P7</td>
+  <td>Same as P7</td>
+</tr>
+<tr>
+  <td class="aspect">μ static/kinetic split</td>
+  <td>μK = base×0.72, μS = base×0.84 <span class="tag tag-ok">small gap</span></td>
+  <td>Same as P7</td>
+  <td class="warn">No explicit static/kinetic split — single μ_eff <span class="tag tag-bad">missing</span></td>
+  <td>Same as P7 <span class="tag tag-ok">small gap</span></td>
+  <td class="best">μK = max(MU_ROLL, min(base×0.86, muDry)), μS = max(μK, muDry) <span class="tag tag-best">widest/most physical</span></td>
+</tr>
+<tr>
+  <td class="aspect">Surface grit scaling</td>
+  <td>muDry lookup only</td>
+  <td>muDry lookup only</td>
+  <td class="best">SurfaceFrictionTuning: aScale + hRefScale per grit <span class="tag tag-best">best</span></td>
+  <td>muDry lookup only</td>
+  <td>muDry lookup only</td>
+</tr>
+<tr>
+  <td class="aspect">Contact area model</td>
+  <td>Fixed 5e-4 m²</td>
+  <td>Fixed 5e-4 m²</td>
+  <td class="best">Dynamic: A_c × (1 + 1.25×film) — oil increases footprint <span class="tag tag-best">best</span></td>
+  <td>Fixed 5e-4 m²</td>
+  <td>Fixed 5e-4 m²</td>
+</tr>
+
+<tr><td colspan="6" class="cat" style="text-align:center;">Traction / convergence system</td></tr>
+<tr>
+  <td class="aspect">Traction X/Y states</td>
+  <td>Yes, evolveState() with exp decay <span class="tag tag-good">good</span></td>
+  <td>Yes, same <span class="tag tag-good">good</span></td>
+  <td class="warn">None — slip magnitude is the only diagnostic <span class="tag tag-bad">missing</span></td>
+  <td>Yes, via stateRate() in RK4 deriv <span class="tag tag-best">best</span></td>
+  <td>Yes, via stateRate() in RK4 deriv <span class="tag tag-best">best</span></td>
+</tr>
+<tr>
+  <td class="aspect">Traction rise/fall rates</td>
+  <td>TX_RISE=10, TY_RISE=5, TX_FALL=5, TY_FALL=8</td>
+  <td>TX_RISE=12, TY_RISE=7 <span class="tag tag-good">faster response</span></td>
+  <td>N/A</td>
+  <td>Same as P8 <span class="tag tag-good">faster</span></td>
+  <td>Same as P8 <span class="tag tag-good">faster</span></td>
+</tr>
+<tr>
+  <td class="aspect">Lateral slip blend</td>
+  <td>blendBySlip() — DECREASING with slip <span class="tag tag-ok">inverted?</span></td>
+  <td class="best">hookBlendBySlip() — INCREASING with slip <span class="tag tag-best">correct</span></td>
+  <td>N/A (raw slip only)</td>
+  <td>hookBlendBySlip() <span class="tag tag-best">correct</span></td>
+  <td>hookBlendBySlip() <span class="tag tag-best">correct</span></td>
+</tr>
+<tr>
+  <td class="aspect">lateralScale floor</td>
+  <td>MIN_LATERAL_TRACTION = 0.04 <span class="tag tag-good">has floor</span></td>
+  <td>Same <span class="tag tag-good">has floor</span></td>
+  <td class="warn">No lateral scale concept <span class="tag tag-bad">absent</span></td>
+  <td>Same <span class="tag tag-good">has floor</span></td>
+  <td>Same <span class="tag tag-good">has floor</span></td>
+</tr>
+
+<tr><td colspan="6" class="cat" style="text-align:center;">Roll phase handling</td></tr>
+<tr>
+  <td class="aspect">Roll detection</td>
+  <td>slipRatio < 0.1 && tractionX > 0.005 <span class="tag tag-ok">tight thresholds</span></td>
+  <td>slipRatio < 0.2 && tractionX > 0.013 <span class="tag tag-good">looser</span></td>
+  <td>slipMag < 0.02 (absolute) <span class="tag tag-ok">very different</span></td>
+  <td>Same as P8 <span class="tag tag-good">good</span></td>
+  <td>Same as P8 <span class="tag tag-good">good</span></td>
+</tr>
+<tr>
+  <td class="aspect">Heading lock in roll</td>
+  <td>vy *= 0.97 (damping only, no lock) <span class="tag tag-ok">drifts</span></td>
+  <td class="best">rollHeadingRad captured at roll entry, vx/vy projected onto heading <span class="tag tag-best">locked</span></td>
+  <td>Speed-proportional scaling, no explicit heading <span class="tag tag-ok">no lock</span></td>
+  <td>rollHeadingRad via RK4 deriv <span class="tag tag-best">locked</span></td>
+  <td>rollHeadingRad via RK4 deriv <span class="tag tag-best">locked</span></td>
+</tr>
+<tr>
+  <td class="aspect">ωH decay in roll</td>
+  <td>×(1 − 0.04×dt×60) <span class="tag tag-ok">slow</span></td>
+  <td>×0.80 per step <span class="tag tag-good">faster kill</span></td>
+  <td>×(1 − 0.02×dt×60) <span class="tag tag-ok">very slow</span></td>
+  <td>log(0.80)/dt exponential <span class="tag tag-best">smooth</span></td>
+  <td>log(0.80)/dt exponential <span class="tag tag-best">smooth</span></td>
+</tr>
+
+<tr><td colspan="6" class="cat" style="text-align:center;">S-shape / reversal prevention</td></tr>
+<tr>
+  <td class="aspect">Anti-S-shape logic</td>
+  <td class="warn">None — lateral can reverse freely <span class="tag tag-bad">S-shapes possible</span></td>
+  <td>hookBlendBySlip prevents early lateral build <span class="tag tag-good">implicit</span></td>
+  <td>No traction system = no reversal guard <span class="tag tag-bad">S-shapes possible</span></td>
+  <td>hookBlendBySlip + heading lock <span class="tag tag-best">strong</span></td>
+  <td>hookBlendBySlip + heading lock <span class="tag tag-best">strong</span></td>
+</tr>
+
+<tr><td colspan="6" class="cat" style="text-align:center;">Spin / rotation model</td></tr>
+<tr>
+  <td class="aspect">Spin decomposition</td>
+  <td>ωF, ωH, ωT (forward, hook, tilt) <span class="tag tag-ok">bowling-specific</span></td>
+  <td>Same ωF, ωH, ωT</td>
+  <td class="best">ωx, ωy, ωz + Euler rigid-body ODEs with cross-coupling <span class="tag tag-best">most physical</span></td>
+  <td>ωF, ωH, ωT (through RK4) <span class="tag tag-good">good</span></td>
+  <td class="best">ωx, ωy, ωz + InertiaTensor (no cross-coupling yet) <span class="tag tag-good">vector state, simple torque</span></td>
+</tr>
+<tr>
+  <td class="aspect">Euler cross-coupling</td>
+  <td>No</td>
+  <td>No</td>
+  <td class="best">Yes: dωi = (τi − (Ij−Ik)ωjωk)/Ii <span class="tag tag-best">full Euler</span></td>
+  <td>No</td>
+  <td>No (intentionally disabled) <span class="tag tag-ok">disabled</span></td>
+</tr>
+<tr>
+  <td class="aspect">Tilt decay model</td>
+  <td>ωT × (1−(0.018+0.045×tY)×dt×60)</td>
+  <td>Same</td>
+  <td>ωZ × (1−0.05×dt×60) in gutter only</td>
+  <td>Same as P7 via deriv</td>
+  <td>Same as P7 via deriv</td>
+</tr>
+<tr>
+  <td class="aspect">Inertia tensor</td>
+  <td>Scalar I = m×rg² <span class="tag tag-ok">basic</span></td>
+  <td>Same</td>
+  <td class="best">Ix, Iy, Iz from rg/diff/asy with renormalization <span class="tag tag-best">best</span></td>
+  <td>Scalar I <span class="tag tag-ok">basic</span></td>
+  <td class="best">Ix, Iy, Iz from rg/diff/asy <span class="tag tag-best">best</span></td>
+</tr>
+
+<tr><td colspan="6" class="cat" style="text-align:center;">Oil / lane interaction</td></tr>
+<tr>
+  <td class="aspect">Oil matrix model</td>
+  <td>Dual-layer (fwd/rev) + viscosity blend <span class="tag tag-good">good</span></td>
+  <td>Same</td>
+  <td>Same structure</td>
+  <td>Same</td>
+  <td>Same</td>
+</tr>
+<tr>
+  <td class="aspect">Oil depletion model</td>
+  <td>pickup = rate × oil × flare × tractionX <span class="tag tag-good">multi-factor</span></td>
+  <td>Same</td>
+  <td class="best">Physics-based: k×μ×Fn×v_slip/(ρ×A_c) <span class="tag tag-best">most physical</span></td>
+  <td>Same as P7</td>
+  <td>Same as P7</td>
+</tr>
+<tr>
+  <td class="aspect">Carrydown deposit</td>
+  <td>ballOil × rate × blend, deposited ahead of ball</td>
+  <td>Same</td>
+  <td>Same formula</td>
+  <td>Same</td>
+  <td>Same</td>
+</tr>
+<tr>
+  <td class="aspect">Viscosity in Hersey #</td>
+  <td class="warn">Uses DEFAULT_OIL viscosity (0.045) always <span class="tag tag-bad">ignores oil type</span></td>
+  <td class="best">Uses sample.effectiveViscosity (per-oil blend) <span class="tag tag-best">correct</span></td>
+  <td>Uses blended etaLocal (dry+oil interpolation) <span class="tag tag-good">good</span></td>
+  <td>Via OilSample <span class="tag tag-best">correct</span></td>
+  <td>Via OilSample <span class="tag tag-best">correct</span></td>
+</tr>
+
+<tr><td colspan="6" class="cat" style="text-align:center;">Phase classification</td></tr>
+<tr>
+  <td class="aspect">Phase labeling</td>
+  <td>roll if rolling, hook if tY>0.12, else skid</td>
+  <td>Same but tY>0.12 in V1, tY>0.18 in V2</td>
+  <td class="warn">Hersey-based: skid if hHat>0.06, hook if lat slip>0.02, else roll <span class="tag tag-ok">fragile</span></td>
+  <td>Same as P8</td>
+  <td class="best">Enum BallPhase + classifyPhase() function <span class="tag tag-best">cleanest</span></td>
+</tr>
+
+<tr><td colspan="6" class="cat" style="text-align:center;">Code quality / architecture</td></tr>
+<tr>
+  <td class="aspect">Sim core reuse</td>
+  <td>Two separate sim functions (V1 + V2) <span class="tag tag-ok">duplication</span></td>
+  <td>Same duplication + debug prints <span class="tag tag-bad">messy</span></td>
+  <td>Single runSimulationV2 only <span class="tag tag-good">clean</span></td>
+  <td class="best">_runSimulationCore() shared by V1 and V2 <span class="tag tag-best">DRY</span></td>
+  <td class="best">_runSimulationCore() shared <span class="tag tag-best">DRY</span></td>
+</tr>
+<tr>
+  <td class="aspect">Debug prints</td>
+  <td>None</td>
+  <td class="warn">print() statements left in sim loop <span class="tag tag-bad">dirty</span></td>
+  <td>None</td>
+  <td>None</td>
+  <td>None</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 style="margin-top: 20px; font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Legend</h3>
+<div style="display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; margin-top: 4px;">
+  <span><span class="tag tag-best">best</span> = strongest implementation of this aspect</span>
+  <span><span class="tag tag-good">good</span> = solid, no issues</span>
+  <span><span class="tag tag-ok">ok</span> = works but has tradeoffs</span>
+  <span><span class="tag tag-bad">missing/bad</span> = absent or problematic</span>
+</div>

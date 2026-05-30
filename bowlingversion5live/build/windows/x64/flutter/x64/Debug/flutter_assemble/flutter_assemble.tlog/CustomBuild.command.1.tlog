@@ -1,0 +1,28 @@
+^C:\USERS\YOSEF\DOCUMENTS\COLLECTIVE DATABASE FOR PROJECTS\BOWLING 4.03.2026\BOWLING_SIM_MASTER\BUILD\WINDOWS\X64\CMAKEFILES\2333E63F2D17740F41051C560CFE8FFB\FLUTTER_WINDOWS.DLL.RULE
+setlocal
+"C:\Program Files\Microsoft Visual Studio\2022\Preview\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E env FLUTTER_ROOT=C:\Users\yosef\flutter "PROJECT_DIR=C:\Users\yosef\Documents\collective database for projects\bowling 4.03.2026\bowling_sim_master" FLUTTER_ROOT=C:\Users\yosef\flutter "FLUTTER_EPHEMERAL_DIR=C:\Users\yosef\Documents\collective database for projects\bowling 4.03.2026\bowling_sim_master\windows\flutter\ephemeral" "PROJECT_DIR=C:\Users\yosef\Documents\collective database for projects\bowling 4.03.2026\bowling_sim_master" "FLUTTER_TARGET=C:\Users\yosef\Documents\collective database for projects\bowling 4.03.2026\bowling_sim_master\lib\main.dart" DART_DEFINES=RkxVVFRFUl9WRVJTSU9OPTMuNDEuMg==,RkxVVFRFUl9DSEFOTkVMPXN0YWJsZQ==,RkxVVFRFUl9HSVRfVVJMPWh0dHBzOi8vZ2l0aHViLmNvbS9mbHV0dGVyL2ZsdXR0ZXIuZ2l0,RkxVVFRFUl9GUkFNRVdPUktfUkVWSVNJT049OTA2NzNhNGVlZg==,RkxVVFRFUl9FTkdJTkVfUkVWSVNJT049NmMwYmFhZWJmNw==,RkxVVFRFUl9EQVJUX1ZFUlNJT049My4xMS4w DART_OBFUSCATION=false TRACK_WIDGET_CREATION=true TREE_SHAKE_ICONS=false "PACKAGE_CONFIG=C:\Users\yosef\Documents\collective database for projects\bowling 4.03.2026\bowling_sim_master\.dart_tool\package_config.json" C:/Users/yosef/flutter/packages/flutter_tools/bin/tool_backend.bat windows-x64 Debug
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\YOSEF\DOCUMENTS\COLLECTIVE DATABASE FOR PROJECTS\BOWLING 4.03.2026\BOWLING_SIM_MASTER\BUILD\WINDOWS\X64\CMAKEFILES\07289E8A97FA36191BED10D411D20D58\FLUTTER_ASSEMBLE.RULE
+setlocal
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\YOSEF\DOCUMENTS\COLLECTIVE DATABASE FOR PROJECTS\BOWLING 4.03.2026\BOWLING_SIM_MASTER\WINDOWS\FLUTTER\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\Microsoft Visual Studio\2022\Preview\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" "-SC:/Users/yosef/Documents/collective database for projects/bowling 4.03.2026/bowling_sim_master/windows" "-BC:/Users/yosef/Documents/collective database for projects/bowling 4.03.2026/bowling_sim_master/build/windows/x64" --check-stamp-file "C:/Users/yosef/Documents/collective database for projects/bowling 4.03.2026/bowling_sim_master/build/windows/x64/flutter/CMakeFiles/generate.stamp"
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

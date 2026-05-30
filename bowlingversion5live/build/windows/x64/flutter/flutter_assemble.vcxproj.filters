@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\yosef\Documents\collective database for projects\bowling 4.03.2026\bowling_sim_master\build\windows\x64\CMakeFiles\2333e63f2d17740f41051c560cfe8ffb\flutter_windows.dll.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\yosef\Documents\collective database for projects\bowling 4.03.2026\bowling_sim_master\build\windows\x64\CMakeFiles\07289e8a97fa36191bed10d411d20d58\flutter_assemble.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\yosef\Documents\collective database for projects\bowling 4.03.2026\bowling_sim_master\windows\flutter\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="C:\Users\yosef\Documents\collective database for projects\bowling 4.03.2026\bowling_sim_master\build\windows\x64\flutter\CMakeFiles\flutter_assemble" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{0828DB5F-C8AE-34C2-82F3-AA7D3DC4A966}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

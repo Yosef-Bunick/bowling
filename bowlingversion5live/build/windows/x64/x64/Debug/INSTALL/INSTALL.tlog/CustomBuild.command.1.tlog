@@ -1,0 +1,10 @@
+^C:\USERS\YOSEF\DOCUMENTS\COLLECTIVE DATABASE FOR PROJECTS\BOWLING 4.03.2026\BOWLING_SIM_MASTER\BUILD\WINDOWS\X64\CMAKEFILES\1973E98EAC1FA9BFA250E59CF23A5A34\INSTALL_FORCE.RULE
+setlocal
+cd .
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
