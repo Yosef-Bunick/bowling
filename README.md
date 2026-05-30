@@ -11,6 +11,36 @@ Feel free to contribute to this code. It is already fairly thorough, but still n
 ```text
 BOWLING2,3 μ_eff = oil · [MU_OIL_MIN + C(1-e^(-D·Ĥ))]  +  (1-oil) · [μ_min + a/(H+b) + c·H]
 BOWLING4 μ(v_slip, H) = μ_c + (μ_s·e^(-aH) - μ_c) · e^(-(v_slip/v_s(1+bH))²)
+
+      CURRENT bowling5built (physics.dart):
+
+        ┌─ Stribeck ──────────────────────────────────────┐
+        │ muBase = muMin + A/(hHat+B) + C(1−e^(−D·hHat))  │
+        └─────────────────────────────────────────────────┘
+             │
+             ├─ muK = clamp(muBase · 0.4,  ROLL_RES, muDry)
+             ├─ muS = clamp(muBase,         muK,     muDry)
+             │
+        ┌─ Slip blend ────────────────────────────────────────────┐
+        │ slipBlendX = (X_SKID_SLIP  − slipRatio)                 │
+        │            / (X_SKID_SLIP  − X_ROLL_SLIP)   → [0,1]     │
+        │                                                         │
+        │ oilGripX   = 1 − OIL_X_DROP · oil^OIL_X_EXP             │
+        │ tractionTargetX = slipBlendX · oilGripX                 │
+        └─────────────────────────────────────────────────────────┘
+             │
+        ┌─ Traction memory ─────────────────────────────┐
+        │ dT/dt = (target − T) · rate   (rise ≠ fall)   │
+        └───────────────────────────────────────────────┘
+             │
+        ┌─ Final blend ──────────────────────────────────┐
+        │ μX = μK·(1−TX) + μS·TX                         │
+        │ μY = μK·(1−TY) + μS·TY                         │
+        └────────────────────────────────────────────────┘
+
+
+
+
 ```
 
 ## Setup
