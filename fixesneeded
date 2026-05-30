@@ -1,4 +1,4 @@
-AI generated #fixme!
+Physics AI generated #fixme!
 
 Here’s a compact scorecard for the math in your current model, 
 based on **“10 = strongly physics-grounded”** and **“1 = basically a game hack.”** 
@@ -117,16 +117,10 @@ roll latch eliminates oscillation, proper inertia tensor replaces hook bias, ini
 
     FRICTION LAW — ALREADY BETTER THAN PROPOSED
 
-      Your suggestion:  μ = μ_min + (μ_max−μ_min)·e^(−kH)
+      OLD:  μ = μ_min + (μ_max−μ_min)·e^(−kH)
 
-      Your current:     μ = μ_min + A/(hHat+B) + C·(1−e^(−D·hHat))
-                             ↑ boundary     ↑ mixed        ↑ hydrodynamic
-
-      The exponential-only version would LOSE the boundary lubrication
-      regime (the A/(hHat+B) term). At very low Hersey (metal-to-metal
-      contact), your current curve spikes correctly — the exponential
-      alone would plateau at μ_max too early. Your Stribeck is actually
-      the better model. Keep it.
+      current:     μ = μ_min + A/(hHat+B) + C·(1−e^(−D·hHat))
+                   ↑ boundary     ↑ mixed        ↑ hydrodynamic
 
       What NEEDS fixing is the INPUT to the Stribeck: hHat should be
       real film thickness ÷ H_REF, not just oil∈[0,1]. That's weakness
