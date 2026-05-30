@@ -1,75 +1,138 @@
 Here’s a compact scorecard for the math in your current model, based on **“10 = strongly physics-grounded”** and **“1 = basically a game hack.”** The formulas and structure come from your current `physics.dart`. 
 
-| Part                             | Current math / idea                                     | Physics score /10 | Verdict                                   |
-| -------------------------------- | ------------------------------------------------------- | ----------------: | ----------------------------------------- |
-| Geometry constants               | (g), ball radius, board width, SI conversion            |             **9** | Solid                                     |
-| MOI from RG                      | (I = m,RG^2)                                            |             **8** | Good approximation                        |
-| Grit → dry friction table        | surface mapped to fixed (\mu_{dry}) values              |             **5** | Useful, but empirical                     |
-| Hook bias from RG/diff/asy       | scalar boost to hook response                           |             **3** | Control hack, not real rigid-body physics |
-| Oil pattern builder              | forward/reverse pass + decay tails                      |             **6** | Good machine-inspired model               |
-| Oil normalization                | (oil = raw / \max(raw))                                 |**no change done3**| Good for visuals, weak physically         |
-| Oil grid resolution              | 0.25 ft cells, 260 columns                              |             **9** | Strong improvement                        |
-| Oil sampling                     | bilinear interpolation in board/ft                      |             **9** | Correct approach                          |
-| Pickup/deposit writeback         | nearest-cell add/subtract                               |             **4** | Coarse approximation                      |
-| Initial forward speed            | (v_x = v\cos\theta)                                     |             **8** | Fine                                      |
-| Initial lateral speed            | (v_y = 0.20,v\sin\theta)                                |      **2changed** | Big fudge factor                          |
-| Initial rev split                | (\omega_F,\omega_H,\omega_T) from axis rotation/tilt    |             **6** | Reasonable first-order model              |
-| Slip calculation                 | (slip_x = v_x - R\omega_F), (slip_y = v_y + hR\omega_H) |             **8** | Good                                      |
-| Slip ratio                       | (slipMag / v_x)                                         |             **6** | Works, but imperfect denominator          |
-| Flare exposure formula           | diff + asym + rpm + tilt suppression                    |             **4** | Plausible effect model, not proven        |
-| Dry friction ceilings            | (\mu_{K,dry}, \mu_{S,dry}) boosted by flare             |             **5** | Empirical but usable                      |
-| Oil-to-friction law              | (\mu \sim (1-oil)^p)                                    |             **4** | Works, but not regime-based tribology     |
-| Slip readiness blend             | map slip ratio to grip readiness                        |             **7** | Good sim logic                            |
-| Oil grip suppression             | (1-d,oil^p)                                             |             **6** | Reasonable sim logic                      |
-| Target traction                  | slip blend × oil grip                                   |             **7** | Good design                               |
-| Traction memory                  | exponential approach to target                          |             **7** | Good dynamic smoothing                    |
-| Effective friction blend         | (\mu_X=(1-T_x)\mu_K+T_x\mu_S), same for (Y)             |             **6** | Useful, somewhat layered/empirical        |
-| Lateral traction floor           | minimum lateral bite term                               |             **5** | Practical hack                            |
-| Friction force law               | (F = -\mu F_N \hat u)                                   |             **8** | Standard approximation                    |
-| Translational update             | (v \leftarrow v + (F/m)dt)                              |             **9** | Correct                                   |
-| Rotational torque update         | (\alpha = RF/I) style update                            |             **7** | Reasonable                                |
-| Different inertias via hook bias | (I_h = I/bias)                                          |             **3** | Tuning hack                               |
-| Spin clamps                      | clamp (\omega_F,\omega_H) to ranges                     |      **2changed** | Stability hack, hides bad physics         |
-| Tilt decay                       | manual exponential decay tied to traction               |             **3** | Empirical                                 |
-| Gutter model                     | damping rules in gutter                                 |             **4** | Gameplay fallback                         |
-| Lane transition pickup formula   | oil × flare × traction-based pickup                     |             **5** | Structurally okay, not calibrated         |
-| Lane transition deposit formula  | carried oil × carry blend                               |             **4** | Simplified                                |
-| Ball-oil state                   | scalar ballOil reservoir                                |             **5** | Useful abstraction                        |
-| Skid/hook/roll phase labels      | threshold rules on slip + traction                      |             **6** | Good classification, not deep physics     |
-| Breakpoint detector              | oil drop + traction + ft thresholds                     |             **5** | Display heuristic                         |
+    Part                             | Current approach                                     | Physics Score /10 | Notes
+    ─────────────────────────────────┼──────────────────────────────────────────────────────┼───────────┼──────────────────────────────────
+    Geometry constants               | G, R, board width, SI conv                           |     9     | Solid
+    MOI from RG                      | I = m·RG²                                            |     8     | Good approximation
+    Inertia tensor                   | Full Ixx,Iyy,Izz from diff/asy, mean-preserving      |     8     | Proper 3-axis, good
+    Grit → dry friction              | Hardcoded μ lookup table                             |     5     | Empirical, usable
+    RG/diff/asy factors              | Scalar multipliers from ref values                   |     5     | Reasonable normalizers
+    Oil pattern builder              | Forward/reverse passes + saturation carry + exp decay|     7     | Good machine-inspired model
+    Oil normalization                | raw / max(raw)                                       |     3     | Normalizes away physical units
+    Oil grid resolution              | 0.25 ft × 39 boards, 260 cols                        |     9     | Strong
+    Oil sampling                     | Bilinear interpolation                               |     9     | Correct
+    Pickup/deposit writeback         | Nearest-cell proportional split                      |     4     | Coarse but functional
+    Initial velocity                 | vx = v·cos(θ), vy = v·sin(θ) — NO 0.20 fudge         |     9     | Clean, direct
+    Initial spin vector              | Full ωx,ωy,ωz from axis rotation + tilt              |     7     | Good 3D decomposition
+    Slip calculation                 | slipX = vx - R·ωy, slipY = vy + h·R·ωx               |     8     | Correct with handedness
+    Slip ratio                       | slipMag / vx                                         |     6     | Works, denominator imperfect
+    Flare exposure                   | diff + asy + RPM weighted, tilt-suppressed           |     4     | Plausible, unvalidated
+    Stribeck friction model          | μ(Hersey) = μ_min + A/(hHat+B) + C(1-e^(-D·hHat))    |     8     | Real tribology curve
+    Hersey number                    | η·u/P from film thickness, viscosity, pressure       |     7     | Proper dimensionless param
+    Dry friction ceiling             | μ_max boosted 12% by flare                           |     5     | Empirical tilt
+    Kinetic/static split             | μ_K = μ_base·0.4, μ_S = max(μ_K, μ_base)             |     6     | Reasonable split, tunable
+    Slip readiness blend             | map slipRatio → grip via skid/roll thresholds        |     8     | Clean logic
+    Oil grip suppression             | 1 − drop·oil^exp, separate X/Y params                |     7     | Good sim logic
+    Traction target                  | slipBlend × oilGrip, separate X/Y                    |     8     | Well-structured
+    Traction memory                  | dT/dt = (target − T)·rate, asymmetric rise/fall      |     8     | Smooth, tunable separately
+    Effective friction blend         | μ = μ_K·(1−T) + μ_S·T, separate X/Y                  |     7     | Clean interpolation
+    Lateral traction floor           | μ_Y scaled by MIN_LATERAL_TRACTION + (1−)·T_Y        |     6     | Practical hack
+    Friction force law               | F = −μ·F_N·û                                         |     8     | Standard approximation
+    Translational update             | RK4 — 4th order                                      |     9     | Correct, high-order
+    Rotational torque                 | RK4, α = R×F / I_axis (no Euler coupling)           |     7     | Clean; Euler cross-terms disabled
+    Spin damping (ωZ)                | ωZ decay tied to traction, 60× multiplier            |     5     | Tuning hack, effective
+    Roll latch                       | Permanent lock: slip<thresh OR hook-resolved         |     7     | Smart, prevents oscillation
+    Roll phase — heading lock        | Freeze heading on latch, no-slip ω tracking          |     8     | Physically correct
+    Gutter model                     | Exponential damping + roll decay + friction decel    |     5     | Gameplay fallback
+    Lane transition pickup           | oil × flare × traction, dt-scaled ×8                 |     5     | Structurally sound, uncalibrated
+    Lane transition deposit          | ballOil × carryBlend blend, ahead of ball            |     4     | Simplified pattern
+    Ball-oil reservoir               | Scalar ballOil with pickup−deposit balance           |     5     | Useful abstraction
+    Phase classification             | Three-state: roll latch → skid/hook by tractionY     |     7     | Clean, uses latch state
+    Breakpoint detector              | Oil drop + low oil + traction + ft thresholds        |     5     | Display heuristic
+    Integration method               | RK4 at 240 Hz                                        |     9     | Proper ODE solver
+    Sim stepping                     | Fixed dt = 1/240s, runs until 65ft or vx<0.3         |     8     | Solid
 
-## Overall averages
 
-| Category                       | Score /10 |
-| ------------------------------ | --------: |
-| Core mechanics framework       |   **7.5** |
-| Bowling-specific control logic |   **6.5** |
-| Oil / lane transition realism  |   **4.5** |
-| Rev / axis realism             |   **4.5** |
-| Launch / motion realism        |   **4.0** |
-| Full physical fidelity overall |   **5.5** |
+Major upgrades from the old model: RK4 replaces Euler, Stribeck replaces ad-hoc oil-μ mapping, full 3D spin vector replaces split rev model,
+roll latch eliminates oscillation, proper inertia tensor replaces hook bias, initial vy fudge factor removed.
 
-## Biggest strengths
 
-* Geometry and units are mostly solid. 
-* Oil sampling and quarter-foot grid are good now. 
-* Separate forward/lateral slip and traction is a smart bowling-specific design. 
-* Newtonian update structure is fine. 
+    ╔══════════════════════════════════════════════════════════════╗
+    ║              PHYSICS ENGINE v14 — SUMMARY                    ║
+    ║          lib/models/physics.dart (1216 lines)                ║
+    ╚══════════════════════════════════════════════════════════════╝
 
-## Biggest weaknesses
+    OVERALL AVERAGES (revised for current code)
 
-* `vy = 0.20 * speed * sin(angle)` is one of the least physical parts. 
-* Friction is driven mostly by oil amount, not true lubrication regime. 
-* Spin clamps and inertia bias are covering up deeper rev-dynamics issues. 
-* Oil normalization makes the pattern shape good but weakens physical meaning. 
-* Your current pickup/deposit constants are extreme, so lane transition is not physically calibrated. 
+      Category                         Score /10
+      ───────────────────────────────  ────────
+      Core mechanics framework            8.0    (RK4, clean state, latch)
+      Bowling-specific control logic      6.5    (good slip/traction split)
+      Oil / lane transition realism       4.5    (still weakest area)
+      Rev / axis realism                  7.0    (full 3D spin, no clamps)
+      Launch / motion realism             8.0    (no fudge factors)
+      ─────────────────────────────────────────
+      Full physical fidelity overall      6.8    (up from ~5.5)
 
-## If I had to rank the top 5 things to fix first
 
-1. Initial lateral velocity term
-2. Friction law
-3. Spin / torque update and clamps
-4. Oil normalization / absolute scaling
-5. Pickup/deposit footprint and calibration
+    BIGGEST STRENGTHS
 
-potential fixes friction μ=μmin​+(μmax​−μmin​)e−kH
+      9 — RK4 integration at 240 Hz           Proper ODE solver, no drift
+      9 — Oil grid & bilinear sampling        0.25 ft cells, correct interp
+      8 — Initial velocity (no fudge)         vy = v·sin(θ) directly — fixed!
+      8 — Full 3D spin vector                 ωx,ωy,ωz from axis rot + tilt
+      8 — Stribeck friction curve             μ(Hersey) = tribology, not guesswork
+      8 — Roll latch                          Permanent lock prevents oscillation
+      8 — Inertia tensor                      Proper Ixx/Iyy/Izz from diff/asy
+      8 — Traction memory (asymmetric rates)  Separate TX/TY rise/fall tuning
+      7 — Clean slip math with handedness     slipY = vy + h·R·ωx
+      7 — Forward + lateral separate control  Independent μX, μY, tractionX/Y
+
+
+    BIGGEST WEAKNESSES (top 5 to fix)
+
+      1. OIL NORMALIZATION                    raw / max(raw) kills physical units.
+         Score: 3/10 — the pattern shape is right but absolute oil
+         thickness is lost. You need mL-per-board or film-thickness
+         scaling so viscosity × film = actual Hersey number meaning.
+
+      2. OIL → FILM THICKNESS MISSING         The Stribeck input hHat uses oil∈[0,1]
+         as a proxy for film thickness. Real Hersey = η·v / (p·h_film).
+         You need a physical film model: h_film = h_base · oil (or similar).
+         Score: 4/10 — the curve is correct but the input is uncalibrated.
+
+      3. PICKUP/DEPOSIT CALIBRATION           8× dt scaling on pickup/deposit is
+         an unphysical kludge. Constants 0.02/0.012 are plausible but never
+         validated against real lane breakdown rates.
+         Score: 4/10 — structurally sound, needs real-world calibration.
+
+      4. OMEGA-Z DAMPING                     dωZ = −ωZ·(0.018+0.045·tractionY)·60
+         The 60× multiplier and magic constants are pure tuning. No physical
+         mechanism for tilt decay is modeled (it should come from gyroscopic
+         effects through Euler coupling, which is deliberately disabled).
+         Score: 5/10 — works visually, physically unexplained.
+
+      5. FLARE EXPOSURE MODEL                diff·0.90 + asy·0.45 + rpm·0.20,
+         suppressed by tilt·0.35. The structure is reasonable but the weights
+         are completely arbitrary. No validation against measured flare data.
+         Score: 4/10 — plausible shape, unvalidated numbers.
+
+      BONUS: Nearest-cell pickup/deposit     Score: 4/10 — functional but
+         coarse. Should spread across contact patch radius (~2 boards).
+
+
+    FRICTION LAW — ALREADY BETTER THAN PROPOSED
+
+      Your suggestion:  μ = μ_min + (μ_max−μ_min)·e^(−kH)
+
+      Your current:     μ = μ_min + A/(hHat+B) + C·(1−e^(−D·hHat))
+                             ↑ boundary     ↑ mixed        ↑ hydrodynamic
+
+      The exponential-only version would LOSE the boundary lubrication
+      regime (the A/(hHat+B) term). At very low Hersey (metal-to-metal
+      contact), your current curve spikes correctly — the exponential
+      alone would plateau at μ_max too early. Your Stribeck is actually
+      the better model. Keep it.
+
+      What NEEDS fixing is the INPUT to the Stribeck: hHat should be
+      real film thickness ÷ H_REF, not just oil∈[0,1]. That's weakness
+      #2 above.
+
+
+    IF I HAD TO RANK FIXES BY IMPACT:
+
+      1. Physical film thickness model      (makes Stribeck meaningful)
+      2. Oil normalization with units       (makes pattern data portable)
+      3. Calibrate pickup/deposit rates     (makes lane transition real)
+      4. Proper tilt decay (Euler coupling) (removes the 60× hack)
+      5. Validate flare weights             (makes ball specs matter correctly)
