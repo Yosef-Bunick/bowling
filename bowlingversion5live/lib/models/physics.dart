@@ -194,14 +194,14 @@ class BowlerInputs {
   double handedness;
 
   BowlerInputs({
-    this.speedMph = 18.0,
+    this.speedMph = 19.0,
     this.revRPM = 300.0,
-    this.angleDeg = 0.0,
+    this.angleDeg = 0.25,
     this.axisTilt = 15.0,
     this.axisRotation = 40.0,
     this.hookK0 = 1.0,
-    this.releaseBoard = 25.0,
-    this.landingDistanceFt = 1.0,
+    this.releaseBoard = 27.0,
+    this.landingDistanceFt = 1.5,
     this.handedness = 1.0,
   });
 
